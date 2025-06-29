@@ -76,7 +76,7 @@ pub struct C2SChart {
 }
 
 pub struct C2SMetadata {
-    pub version: String,
+    pub version: [String; 2],
     /// Song ID, unused in C2S, is declared in Music.xml instead
     pub music: u32,
     /// Sequence ID, unused in C2S, is declared in Music.xml instead
@@ -90,10 +90,10 @@ pub struct C2SMetadata {
     pub creator: String,
     /// Default BPM (Beats Per Minute) of the song.
     // `BPM_DEF`
-    pub bpm_default: f32,
+    pub bpm_default: [f32; 4],
     /// Metronome definition?
     // `MET_DEF`
-    pub metronome_def: Option<String>,
+    pub metronome_def: Option<[u32; 4]>,
     /// Resolution of the chart, defaults to 384 per measure.
     // `RESOLUTION`
     pub resolution: u32,
@@ -149,11 +149,12 @@ pub struct TimeSignature {
 }
 
 /// Information about a note that was wrapped in ASD/ASC format
+/// Both ASD and ASC are wrapper formats that can contain any note type
 #[derive(Debug, Clone, PartialEq)]
 pub struct WrappedNoteInfo {
     /// The original format type ("ASD" or "ASC")
     pub original_format: String,
-    /// The wrapped note type string (e.g., "CHR", "SLD", "TAP")
+    /// The wrapped note type string (e.g., "CHR", "SLD", "TAP", "ASC")
     pub wrapped_type: String,
     /// First parameter from ASD format (usually 5.0)
     pub param1: f32,
@@ -207,13 +208,10 @@ impl Note {
             return Err("Empty line".to_string());
         }
 
-        // Handle ASD notes by converting them to regular notes
-        if parts[0].to_uppercase() == "ASD" {
-            return Note::from_asd_line(line);
-        }
-
-        // Handle ASC notes with ASD format (12 fields) by converting them to regular notes
-        if parts[0].to_uppercase() == "ASC" && parts.len() == 12 {
+        // Handle ASD and ASC notes (both are wrapper formats with 12 fields) by converting them to regular notes
+        if (parts[0].to_uppercase() == "ASD" || parts[0].to_uppercase() == "ASC")
+            && parts.len() == 12
+        {
             return Note::from_asd_line(line);
         }
 
@@ -344,9 +342,9 @@ impl Note {
             _ => {}
         }
 
-        // If the note is of type ASD or ASC, parse the additional wrapped note information
-        if parts[0].to_uppercase() == "ASD"
-            || (parts[0].to_uppercase() == "ASC" && parts.len() == 12)
+        // If the note is of type ASD or ASC (both are wrapper formats), parse the additional wrapped note information
+        if (parts[0].to_uppercase() == "ASD" || parts[0].to_uppercase() == "ASC")
+            && parts.len() == 12
         {
             wrapped_note_info = Some(WrappedNoteInfo {
                 original_format: parts[0].to_string(),
@@ -377,9 +375,9 @@ impl Note {
         })
     }
 
-    /// Converts an ASD (Air Special Data) line or ASC line with ASD format into a regular Note
-    /// ASD Format: ASD measure tick cell width type param1 duration end_cell end_width param2 param3
-    /// ASC Format: ASC measure tick cell width type param1 duration end_cell end_width param2 param3
+    /// Converts an ASD (Air Special Data) or ASC (Air Slide Control) wrapper line into a regular Note
+    /// Both ASD and ASC use the same 12-field wrapper format:
+    /// ASD/ASC measure tick cell width type param1 duration end_cell end_width param2 param3
     pub fn from_asd_line(line: &str) -> Result<Self, String> {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
@@ -428,11 +426,12 @@ impl Note {
             // For ASD notes, use the wrapped note type
             string_to_note_type(&wrapped_type.to_uppercase())?
         } else if note_type_prefix == "ASC" {
-            // For ASC notes, use AirSlideControlPoint regardless of wrapped type
-            ChuniNoteType::AirSlideControlPoint
+            // For ASC notes, also use the wrapped note type
+            // ASC can wrap any note type, not just AirSlideControlPoint
+            string_to_note_type(&wrapped_type.to_uppercase())?
         } else {
             return Err(format!(
-                "Invalid note type prefix for ASD format: {}",
+                "Invalid note type prefix for ASD/ASC format: {}",
                 note_type_prefix
             ));
         };
@@ -677,6 +676,18 @@ impl Note {
         self.wrapped_note_info.is_some()
     }
 
+    /// Returns true if this note is an air action or a crush (ALD+NON)
+    pub fn is_air_action(&self) -> bool {
+        matches!(
+            self.note_type,
+            ChuniNoteType::AirSlide | ChuniNoteType::AirSlideControlPoint
+        ) && self
+            .wrapped_note_info
+            .as_ref()
+            .map(|info| info.param3 == "NON")
+            .unwrap_or(false)
+    }
+
     /// Returns the original format if this was a wrapped note ("ASD" or "ASC")
     pub fn get_original_format(&self) -> Option<&str> {
         self.wrapped_note_info
@@ -689,6 +700,171 @@ impl Note {
         self.wrapped_note_info
             .as_ref()
             .map(|info| info.wrapped_type.as_str())
+    }
+}
+
+impl C2SChart {
+    /// Parse a complete C2S chart from a string containing both metadata and notes
+    pub fn from_string(content: &str) -> Result<Self, String> {
+        let lines: Vec<&str> = content.lines().collect();
+        let mut metadata = C2SMetadata::default();
+        let mut notes = Vec::new();
+        let mut in_notes_section = false;
+
+        for line in lines {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+
+            // Parse metadata
+            match parts[0] {
+                "VERSION" => {
+                    if parts.len() >= 3 {
+                        metadata.version = [parts[1].to_string(), parts[2].to_string()];
+                    }
+                }
+                "MUSIC" => {
+                    if parts.len() >= 2 {
+                        metadata.music = parts[1].parse().unwrap_or(0);
+                    }
+                }
+                "SEQUENCEID" => {
+                    if parts.len() >= 2 {
+                        metadata.sequence_id = parts[1].parse().unwrap_or(0);
+                    }
+                }
+                "DIFFICULT" => {
+                    if parts.len() >= 2 {
+                        metadata.difficulty = parts[1].parse().unwrap_or(0);
+                    }
+                }
+                "LEVEL" => {
+                    if parts.len() >= 2 {
+                        metadata.level = parts[1].parse::<f32>().unwrap_or(0.0) as u32;
+                    }
+                }
+                "CREATOR" => {
+                    if parts.len() >= 2 {
+                        metadata.creator = parts[1..].join(" ");
+                    }
+                }
+                "BPM_DEF" => {
+                    if parts.len() >= 5 {
+                        metadata.bpm_default = [
+                            parts[1].parse().unwrap_or(120.0),
+                            parts[2].parse().unwrap_or(120.0),
+                            parts[3].parse().unwrap_or(120.0),
+                            parts[4].parse().unwrap_or(120.0),
+                        ];
+                    }
+                }
+                "MET_DEF" => {
+                    if parts.len() >= 3 {
+                        metadata.metronome_def = Some([
+                            parts[1].parse().unwrap_or(4),
+                            parts[2].parse().unwrap_or(4),
+                            0,
+                            0,
+                        ]);
+                    }
+                }
+                "RESOLUTION" => {
+                    if parts.len() >= 2 {
+                        metadata.resolution = parts[1].parse().unwrap_or(384);
+                    }
+                }
+                "CLK_DEF" => {
+                    if parts.len() >= 2 {
+                        metadata.clock_default = parts[1].parse().unwrap_or(384.0);
+                    }
+                }
+                "PROGJUDGE_BPM" => {
+                    if parts.len() >= 2 {
+                        metadata.progjudge_bpm = parts[1].parse().unwrap_or(240.0);
+                    }
+                }
+                "PROGJUDGE_AER" => {
+                    if parts.len() >= 2 {
+                        metadata.progjudge_aer = parts[1].parse().unwrap_or(0.999);
+                    }
+                }
+                "TUTORIAL" => {
+                    if parts.len() >= 2 {
+                        metadata.tutorial = parts[1] == "1";
+                    }
+                }
+                "BPM" => {
+                    if parts.len() >= 4 {
+                        metadata.bpm.push(Bpm {
+                            measure: parts[1].parse().unwrap_or(0),
+                            offset: parts[2].parse().unwrap_or(0),
+                            bpm: parts[3].parse().unwrap_or(120.0),
+                        });
+                    }
+                }
+                "MET" => {
+                    if parts.len() >= 5 {
+                        metadata.time_signatures.push(TimeSignature {
+                            measure: parts[1].parse().unwrap_or(0),
+                            offset: parts[2].parse().unwrap_or(0),
+                            numerator: parts[3].parse().unwrap_or(4),
+                            denominator: parts[4].parse().unwrap_or(4),
+                        });
+                    }
+                }
+                "SFL" => {
+                    if parts.len() >= 5 {
+                        metadata.sfl.push(Sfl {
+                            measure: parts[1].parse().unwrap_or(0),
+                            offset: parts[2].parse().unwrap_or(0),
+                            duration: parts[3].parse().unwrap_or(0),
+                            multiplier: parts[4].parse().unwrap_or(1.0),
+                        });
+                    }
+                }
+                // If it's not a metadata field, try to parse it as a note
+                _ => {
+                    in_notes_section = true;
+                    match Note::from_line(line) {
+                        Ok(note) => notes.push(note),
+                        Err(_) => {
+                            // Skip lines that can't be parsed as notes (might be comments or other metadata)
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(C2SChart { metadata, notes })
+    }
+}
+
+impl Default for C2SMetadata {
+    fn default() -> Self {
+        Self {
+            version: ["1.00.00".to_string(), "1.00.00".to_string()],
+            music: 0,
+            sequence_id: 0,
+            difficulty: 0,
+            level: 0,
+            creator: "Unknown".to_string(),
+            bpm_default: [120.0, 120.0, 120.0, 120.0],
+            metronome_def: Some([4, 4, 0, 0]),
+            resolution: 384,
+            clock_default: 384.0,
+            progjudge_bpm: 240.0,
+            progjudge_aer: 0.999,
+            tutorial: false,
+            bpm: Vec::new(),
+            time_signatures: Vec::new(),
+            sfl: Vec::new(),
+        }
     }
 }
 
@@ -834,20 +1010,380 @@ TAP 9 288 9 4"#;
         assert_eq!(wrapped_info.param2, 5.0);
         assert_eq!(wrapped_info.param3, "DEF");
 
-        // Test ASC note with ASD format
-        let asc_line = "ASC 14 288 4 4 CHR 5.0 21 3 4 5.0 DEF";
+        // Test ASC note with wrapper format - wrapping SLD
+        let asc_line = "ASC 2 96 12 4 SLD 5.0 12 6 4 5.0 DEF";
         let note = Note::from_line(asc_line).unwrap();
+
+        assert_eq!(note.note_type, ChuniNoteType::Slide);
+        assert!(note.wrapped_note_info.is_some());
+        let wrapped_info = note.wrapped_note_info.unwrap();
+        assert_eq!(wrapped_info.original_format, "ASC");
+        assert_eq!(wrapped_info.wrapped_type, "SLD");
+
+        // Test ASC note wrapping another ASC (yes, this happens!)
+        let asc_asc_line = "ASC 5 336 9 4 ASC 5.0 22 9 5 5.0 DEF";
+        let note = Note::from_line(asc_asc_line).unwrap();
 
         assert_eq!(note.note_type, ChuniNoteType::AirSlideControlPoint);
         assert!(note.wrapped_note_info.is_some());
         let wrapped_info = note.wrapped_note_info.unwrap();
         assert_eq!(wrapped_info.original_format, "ASC");
-        assert_eq!(wrapped_info.wrapped_type, "CHR");
+        assert_eq!(wrapped_info.wrapped_type, "ASC");
 
         // Test regular note has no wrapped info
         let regular_line = "TAP 8 0 6 4";
         let note = Note::from_line(regular_line).unwrap();
         assert_eq!(note.note_type, ChuniNoteType::Tap);
         assert!(note.wrapped_note_info.is_none());
+    }
+
+    #[test]
+    fn test_full_chart_with_metadata() {
+        let chart_content = r#"VERSION	1.12.00	1.12.00
+MUSIC	0
+SEQUENCEID	0
+DIFFICULT	00
+LEVEL	0.0
+CREATOR	みぞれヤナギ
+BPM_DEF	135.000	135.000	135.000	135.000
+MET_DEF	4	4
+RESOLUTION	384
+CLK_DEF	384
+PROGJUDGE_BPM	240.000
+PROGJUDGE_AER	  0.999
+TUTORIAL	0
+
+BPM	0	0	135.000
+MET	0	0	4	4
+
+TAP	0	0	8	4
+CHR	0	192	4	8	CE
+HLD	1	0	0	4	192
+SLD	2	0	12	4	192	8	4
+AHD	3	0	6	4	TAP	96
+AIR	3	0	6	4	TAP
+TAP	4	0	0	16"#;
+
+        let chart = C2SChart::from_string(chart_content).unwrap();
+
+        // Test metadata parsing
+        assert_eq!(chart.metadata.version[0], "1.12.00");
+        assert_eq!(chart.metadata.version[1], "1.12.00");
+        assert_eq!(chart.metadata.music, 0);
+        assert_eq!(chart.metadata.sequence_id, 0);
+        assert_eq!(chart.metadata.difficulty, 0);
+        assert_eq!(chart.metadata.level, 0);
+        assert_eq!(chart.metadata.creator, "みぞれヤナギ");
+        assert_eq!(chart.metadata.bpm_default, [135.0, 135.0, 135.0, 135.0]);
+        assert_eq!(chart.metadata.metronome_def, Some([4, 4, 0, 0]));
+        assert_eq!(chart.metadata.resolution, 384);
+        assert_eq!(chart.metadata.clock_default, 384.0);
+        assert_eq!(chart.metadata.progjudge_bpm, 240.0);
+        assert_eq!(chart.metadata.progjudge_aer, 0.999);
+        assert!(!chart.metadata.tutorial);
+
+        // Test BPM and MET changes
+        assert_eq!(chart.metadata.bpm.len(), 1);
+        assert_eq!(chart.metadata.bpm[0].measure, 0);
+        assert_eq!(chart.metadata.bpm[0].offset, 0);
+        assert_eq!(chart.metadata.bpm[0].bpm, 135.0);
+
+        assert_eq!(chart.metadata.time_signatures.len(), 1);
+        assert_eq!(chart.metadata.time_signatures[0].measure, 0);
+        assert_eq!(chart.metadata.time_signatures[0].offset, 0);
+        assert_eq!(chart.metadata.time_signatures[0].numerator, 4);
+        assert_eq!(chart.metadata.time_signatures[0].denominator, 4);
+
+        // Test notes parsing
+        assert_eq!(chart.notes.len(), 7);
+        assert_eq!(chart.notes[0].note_type, ChuniNoteType::Tap);
+        assert_eq!(chart.notes[1].note_type, ChuniNoteType::ExTap);
+        assert_eq!(chart.notes[2].note_type, ChuniNoteType::Hold);
+        assert_eq!(chart.notes[3].note_type, ChuniNoteType::Slide);
+        assert_eq!(chart.notes[4].note_type, ChuniNoteType::AirHold);
+        assert_eq!(chart.notes[5].note_type, ChuniNoteType::Air);
+        assert_eq!(chart.notes[6].note_type, ChuniNoteType::Tap);
+
+        // Test specific note properties
+        assert_eq!(chart.notes[1].chr_modifier, Some("CE".to_string()));
+        assert_eq!(chart.notes[2].duration, Some(192));
+        assert_eq!(chart.notes[3].end_cell, Some(8.0));
+        assert_eq!(chart.notes[3].end_width, Some(4.0));
+        assert_eq!(chart.notes[4].target_note, Some("TAP".to_string()));
+        assert_eq!(chart.notes[4].duration, Some(96));
+        assert_eq!(chart.notes[5].target_note, Some("TAP".to_string()));
+
+        // Test the full-width tap note (cell 0, width 16)
+        assert_eq!(chart.notes[6].cell, 0);
+        assert_eq!(chart.notes[6].width, 16);
+    }
+
+    #[test]
+    fn test_air_action_and_air_crush_notes() {
+        let chart_content = r#"VERSION	1.13.00	1.13.00
+MUSIC	2699
+SEQUENCEID	3
+DIFFICULT	03
+LEVEL	13.0
+CREATOR	SOMEONE
+BPM_DEF	175.000	175.000	175.000	175.000
+MET_DEF	4	4
+RESOLUTION	384
+CLK_DEF	384
+PROGJUDGE_BPM	240.000
+PROGJUDGE_AER	0.999
+TUTORIAL	0
+
+BPM	0	0	175.000
+MET	0	0	4	4
+
+TAP	5	0	8	4
+AHX	5	96	8	4	SLD	96	DEF
+CHR	6	0	4	8	RS
+ALD	6	96	4	8	38400	5.0	1	4	8	5.0	NON
+ALD	6	192	5	6	6	3.0	1	5	6	3.0	NON
+ALD	6	192	6	4	6	2.0	1	6	4	2.0	NON
+ALD	6	192	7	2	6	1.0	1	7	2	1.0	NON"#;
+
+        let chart = C2SChart::from_string(chart_content).unwrap();
+
+        // Test metadata for CHUNITHM NEW version
+        assert_eq!(chart.metadata.version[0], "1.13.00");
+        assert_eq!(chart.metadata.music, 2699);
+        assert_eq!(chart.metadata.sequence_id, 3);
+        assert_eq!(chart.metadata.difficulty, 3);
+        assert_eq!(chart.metadata.level, 13);
+        assert_eq!(chart.metadata.creator, "SOMEONE");
+        assert_eq!(chart.metadata.bpm_default[0], 175.0);
+
+        // Test notes
+        assert_eq!(chart.notes.len(), 7);
+
+        // TAP note
+        assert_eq!(chart.notes[0].note_type, ChuniNoteType::Tap);
+
+        // AHX - AIR-Hold with green ground bar
+        assert_eq!(chart.notes[1].note_type, ChuniNoteType::AirHoldGround);
+        assert_eq!(chart.notes[1].target_note, Some("SLD".to_string()));
+        assert_eq!(chart.notes[1].duration, Some(96));
+
+        // CHR - ExTap
+        assert_eq!(chart.notes[2].note_type, ChuniNoteType::ExTap);
+        assert_eq!(chart.notes[2].chr_modifier, Some("RS".to_string()));
+
+        // ALD+NON - AIR-ACTION (single purple floating bar)
+        assert_eq!(chart.notes[3].note_type, ChuniNoteType::AirSlide);
+        assert_eq!(chart.notes[3].duration, Some(38400));
+
+        // ALD+NON - AIR CRUSH pattern (3 simultaneous notes creating a geometric shape)
+        assert_eq!(chart.notes[4].note_type, ChuniNoteType::AirSlide);
+        assert_eq!(chart.notes[5].note_type, ChuniNoteType::AirSlide);
+        assert_eq!(chart.notes[6].note_type, ChuniNoteType::AirSlide);
+
+        // All three ALD+NON notes should be at the same timing (measure 6, offset 192)
+        assert_eq!(chart.notes[4].measure, 6);
+        assert_eq!(chart.notes[4].offset, 192);
+        assert_eq!(chart.notes[5].measure, 6);
+        assert_eq!(chart.notes[5].offset, 192);
+        assert_eq!(chart.notes[6].measure, 6);
+        assert_eq!(chart.notes[6].offset, 192);
+
+        // Different cell positions and widths for the geometric pattern
+        assert_eq!(chart.notes[4].cell, 5);
+        assert_eq!(chart.notes[4].width, 6);
+        assert_eq!(chart.notes[5].cell, 6);
+        assert_eq!(chart.notes[5].width, 4);
+        assert_eq!(chart.notes[6].cell, 7);
+        assert_eq!(chart.notes[6].width, 2);
+    }
+
+    #[test]
+    fn test_comprehensive_metadata_parsing() {
+        let chart_content = r#"VERSION	1.13.00	1.13.00
+MUSIC	2699
+SEQUENCEID	3
+DIFFICULT	03
+LEVEL	13.2
+CREATOR	SOMEONE
+BPM_DEF	120.000	120.000	120.000	120.000
+MET_DEF	4	4
+RESOLUTION	384
+CLK_DEF	384
+PROGJUDGE_BPM	240.000
+PROGJUDGE_AER	0.999
+TUTORIAL	0
+
+BPM	0	0	120.000
+BPM	4	0	160.000
+BPM	8	192	140.000
+BPM	16	0	180.000
+
+MET	0	0	4	4
+MET	8	0	3	4
+MET	12	0	4	4
+
+SFL	0	0	192	1.0
+SFL	4	0	384	1.5
+SFL	8	0	192	0.8
+SFL	12	0	96	2.0
+
+TAP	0	0	8	4
+HLD	1	0	0	4	192
+CHR	2	0	12	4	UP
+SLD	3	0	4	4	192	8	4
+FLK	4	0	0	2
+AIR	4	0	0	2	FLK
+SLC	4	96	8	4	96	12	4
+SLD	4	192	12	4	192	4	4
+AHD	5	0	4	4	SLD	192
+MNE	6	0	2	2
+TAP	7	0	14	2
+AUR	7	96	14	2	TAP
+AUL	7	192	14	2	TAP
+ADW	7	288	14	2	TAP
+ALD	8	0	6	4	192	10	4	5.0	NON
+ASC	8	96	10	4	96	8	4	3.0	DEF
+ASD	9	0	0	6	CHR	5.0	384	0	3	5.0	DEF
+AHX	10	0	8	4	TAP	192	DEF"#;
+
+        let chart = C2SChart::from_string(chart_content).unwrap();
+
+        // Test basic metadata
+        assert_eq!(chart.metadata.version[0], "1.13.00");
+        assert_eq!(chart.metadata.version[1], "1.13.00");
+        assert_eq!(chart.metadata.music, 2699);
+        assert_eq!(chart.metadata.sequence_id, 3);
+        assert_eq!(chart.metadata.difficulty, 3);
+        assert_eq!(chart.metadata.level, 13); // Should be truncated to integer
+        assert_eq!(chart.metadata.creator, "SOMEONE");
+        assert_eq!(chart.metadata.bpm_default, [120.0, 120.0, 120.0, 120.0]);
+        assert_eq!(chart.metadata.metronome_def, Some([4, 4, 0, 0]));
+        assert_eq!(chart.metadata.resolution, 384);
+        assert_eq!(chart.metadata.clock_default, 384.0);
+        assert_eq!(chart.metadata.progjudge_bpm, 240.0);
+        assert_eq!(chart.metadata.progjudge_aer, 0.999);
+        assert!(!chart.metadata.tutorial);
+
+        // Test BPM changes
+        assert_eq!(chart.metadata.bpm.len(), 4);
+        assert_eq!(chart.metadata.bpm[0].measure, 0);
+        assert_eq!(chart.metadata.bpm[0].offset, 0);
+        assert_eq!(chart.metadata.bpm[0].bpm, 120.0);
+        assert_eq!(chart.metadata.bpm[1].measure, 4);
+        assert_eq!(chart.metadata.bpm[1].offset, 0);
+        assert_eq!(chart.metadata.bpm[1].bpm, 160.0);
+        assert_eq!(chart.metadata.bpm[2].measure, 8);
+        assert_eq!(chart.metadata.bpm[2].offset, 192);
+        assert_eq!(chart.metadata.bpm[2].bpm, 140.0);
+        assert_eq!(chart.metadata.bpm[3].measure, 16);
+        assert_eq!(chart.metadata.bpm[3].offset, 0);
+        assert_eq!(chart.metadata.bpm[3].bpm, 180.0);
+
+        // Test time signature changes
+        assert_eq!(chart.metadata.time_signatures.len(), 3);
+        assert_eq!(chart.metadata.time_signatures[0].measure, 0);
+        assert_eq!(chart.metadata.time_signatures[0].offset, 0);
+        assert_eq!(chart.metadata.time_signatures[0].numerator, 4);
+        assert_eq!(chart.metadata.time_signatures[0].denominator, 4);
+        assert_eq!(chart.metadata.time_signatures[1].measure, 8);
+        assert_eq!(chart.metadata.time_signatures[1].offset, 0);
+        assert_eq!(chart.metadata.time_signatures[1].numerator, 3);
+        assert_eq!(chart.metadata.time_signatures[1].denominator, 4);
+        assert_eq!(chart.metadata.time_signatures[2].measure, 12);
+        assert_eq!(chart.metadata.time_signatures[2].offset, 0);
+        assert_eq!(chart.metadata.time_signatures[2].numerator, 4);
+        assert_eq!(chart.metadata.time_signatures[2].denominator, 4);
+
+        // Test speed changes (SFL)
+        assert_eq!(chart.metadata.sfl.len(), 4);
+        assert_eq!(chart.metadata.sfl[0].measure, 0);
+        assert_eq!(chart.metadata.sfl[0].offset, 0);
+        assert_eq!(chart.metadata.sfl[0].duration, 192);
+        assert_eq!(chart.metadata.sfl[0].multiplier, 1.0);
+        assert_eq!(chart.metadata.sfl[1].measure, 4);
+        assert_eq!(chart.metadata.sfl[1].offset, 0);
+        assert_eq!(chart.metadata.sfl[1].duration, 384);
+        assert_eq!(chart.metadata.sfl[1].multiplier, 1.5);
+        assert_eq!(chart.metadata.sfl[2].measure, 8);
+        assert_eq!(chart.metadata.sfl[2].offset, 0);
+        assert_eq!(chart.metadata.sfl[2].duration, 192);
+        assert_eq!(chart.metadata.sfl[2].multiplier, 0.8);
+        assert_eq!(chart.metadata.sfl[3].measure, 12);
+        assert_eq!(chart.metadata.sfl[3].offset, 0);
+        assert_eq!(chart.metadata.sfl[3].duration, 96);
+        assert_eq!(chart.metadata.sfl[3].multiplier, 2.0);
+
+        // Test comprehensive note parsing
+        assert_eq!(chart.notes.len(), 18);
+
+        // Test variety of note types
+        assert_eq!(chart.notes[0].note_type, ChuniNoteType::Tap);
+        assert_eq!(chart.notes[1].note_type, ChuniNoteType::Hold);
+        assert_eq!(chart.notes[2].note_type, ChuniNoteType::ExTap);
+        assert_eq!(chart.notes[3].note_type, ChuniNoteType::Slide);
+        assert_eq!(chart.notes[4].note_type, ChuniNoteType::Flick);
+        assert_eq!(chart.notes[5].note_type, ChuniNoteType::Air);
+        assert_eq!(chart.notes[6].note_type, ChuniNoteType::SlideControlPoint);
+        assert_eq!(chart.notes[7].note_type, ChuniNoteType::Slide);
+        assert_eq!(chart.notes[8].note_type, ChuniNoteType::AirHold);
+        assert_eq!(chart.notes[9].note_type, ChuniNoteType::Mine);
+        assert_eq!(chart.notes[10].note_type, ChuniNoteType::Tap);
+        assert_eq!(
+            chart.notes[11].note_type,
+            ChuniNoteType::AirDirectional(AirDirection::UpRight)
+        );
+        assert_eq!(
+            chart.notes[12].note_type,
+            ChuniNoteType::AirDirectional(AirDirection::UpLeft)
+        );
+        assert_eq!(
+            chart.notes[13].note_type,
+            ChuniNoteType::AirDirectional(AirDirection::Down)
+        );
+        assert_eq!(chart.notes[14].note_type, ChuniNoteType::AirSlide);
+        assert_eq!(
+            chart.notes[15].note_type,
+            ChuniNoteType::AirSlideControlPoint
+        );
+        assert_eq!(chart.notes[16].note_type, ChuniNoteType::ExTap); // ASD wrapped CHR
+        assert_eq!(chart.notes[17].note_type, ChuniNoteType::AirHoldGround);
+
+        // Test specific note properties
+        assert_eq!(chart.notes[1].duration, Some(192)); // HLD duration
+        assert_eq!(chart.notes[2].chr_modifier, Some("UP".to_string())); // CHR modifier
+        assert_eq!(chart.notes[3].end_cell, Some(8.0)); // SLD end position
+        assert_eq!(chart.notes[3].end_width, Some(4.0)); // SLD end width
+        assert_eq!(chart.notes[4].flick_modifier, Some("L".to_string())); // FLK modifier
+        assert_eq!(chart.notes[5].target_note, Some("FLK".to_string())); // AIR target
+        assert_eq!(chart.notes[8].target_note, Some("SLD".to_string())); // AHD target
+        assert_eq!(chart.notes[8].duration, Some(192)); // AHD duration
+
+        // Test directional air notes target
+        assert_eq!(chart.notes[11].target_note, Some("TAP".to_string()));
+        assert_eq!(chart.notes[12].target_note, Some("TAP".to_string()));
+        assert_eq!(chart.notes[13].target_note, Some("TAP".to_string()));
+
+        // Test ALD (AIR-ACTION) properties
+        assert_eq!(chart.notes[14].duration, Some(192));
+        assert_eq!(chart.notes[14].end_cell, Some(10.0));
+        assert_eq!(chart.notes[14].end_width, Some(4.0));
+
+        // Test ASC (AIR slide control point) properties
+        assert_eq!(chart.notes[15].duration, Some(96));
+        assert_eq!(chart.notes[15].end_cell, Some(8.0));
+        assert_eq!(chart.notes[15].end_width, Some(4.0));
+
+        // Test ASD wrapped note
+        assert!(chart.notes[16].wrapped_note_info.is_some());
+        let wrapped_info = chart.notes[16].wrapped_note_info.as_ref().unwrap();
+        assert_eq!(wrapped_info.original_format, "ASD");
+        assert_eq!(wrapped_info.wrapped_type, "CHR");
+        assert_eq!(wrapped_info.param1, 5.0);
+        assert_eq!(wrapped_info.param2, 5.0);
+        assert_eq!(wrapped_info.param3, "DEF");
+
+        // Test AHX (AIR-Hold with green ground bar)
+        assert_eq!(chart.notes[17].target_note, Some("TAP".to_string()));
+        assert_eq!(chart.notes[17].duration, Some(192));
     }
 }

@@ -200,6 +200,8 @@ AHX [measure] [tick] [cell] [width] [target_note] [duration] [modifier]
 
 AHX notes are AIR-Hold notes with a green ground bar (hybrid air/ground hold note). They appear as a green bar on the ground with air sensor activation required.
 
+They are used as independent AIR notes that do not require any other base notes to depend on. They can be used to create patterns that require the player to hover their hand in the air sensor region while also hitting other notes, like hold/slide notes that end with an AIR wave.
+
 **AIR-ACTION Implementation:**
 
 AIR-ACTION notes are movement-triggered purple bars in the air sensor region. They require hand movement within the air sensor region rather than just hovering. **AIR-ACTION notes are implemented using ALD+NON:**
@@ -228,26 +230,70 @@ ALD [measure] [tick] [cell] [width] [duration] [param1] [param2] [end_cell] [end
 
 **Parameter Meanings:**
 
-- `param4`: Visual style parameter
-  - `"DEF"` - Regular air slide notes
-  - `"NON"` - AIR CRUSH voxel effects (multiple notes create 3D shapes)
-  - `"BLK"` - Black/invisible air slides
+- `param1`: Visual depth parameter (usually 1.0-9.0)
+- `param2`: Timing parameter (usually 1-12)  
+- `param3`: Visual depth parameter (usually 1.0-9.0)
+- `param4`: **Visual effect and behavior modifier** *(inferred)*
+  - `"DEF"` - Regular air slide notes (standard behavior)
+  - `"NON"` - Purple AIR-ACTION notes (standard scoring AIR-ACTIONs)
+  - `"GRY"` - **Gray non-scoring visual effects** (wind/motion lines, atmospheric effects)
+  - `"YEL"` - **Fake ExTap AIR-ACTIONs** (yellow/golden visual styling, always returns Justice like other Fake ExTap notes)
+  - `"BLK"` - **Black/invisible air effects** (hidden visual elements, non-scoring)
+
+**Visual Effect System Discovery:**
+
+The final parameter (`param4`) controls a sophisticated visual effects system that allows chart designers to create:
+
+- 🌪️ **Atmospheric effects**: `GRY` notes create non-scoring wind motion lines and particle effects
+- 🎨 **Color-coded gameplay**: `YEL` provides Fake ExTap variant for AIR-ACTIONs (always Justice)  
+- 👻 **Hidden polish**: `BLK` creates invisible timing markers and subtle visual elements
+- 🎯 **Standard gameplay**: `NON` for regular purple AIR-ACTIONs, `DEF` for air slides
+
+**Thematic Usage Example (Kyoufuu All Back):**
+
+The wind-themed chart uses `GRY` effects extensively to simulate wind motion:
+
+```text
+ALD 6 0 0 1 0 4.0 12 3 2 4.0 GRY    # Wind particle (non-scoring)
+ALD 6 0 0 1 0 6.0 12 3 2 6.0 GRY    # Wind particle (different depth)
+ALD 6 0 0 1 0 8.0 12 3 2 8.0 GRY    # Wind particle (different depth)
+```
+
+These create layered wind effects with varying visual depths (4.0, 6.0, 8.0) without affecting scoring.
 
 **Examples:**
 
-- `ALD 66 0 7 2 38400 5.0 2 7 2 1.0 NON` (AIR CRUSH)
+- `ALD 66 0 7 2 38400 5.0 2 7 2 1.0 NON` (Purple AIR-ACTION)
 - `ALD 10 0 11 2 0 1.0 1 13 2 6.0 DEF` (Regular air slide)
+- `ALD 6 0 0 1 0 4.0 12 3 2 4.0 GRY` (Gray wind effect, non-scoring)
+- `ALD 59 240 12 4 2 5.0 4 10 2 1.0 YEL` (Fake ExTap AIR-ACTION variant - yellow/golden, always Justice)
+- `ALD 17 221 9 2 0 1.0 2 9 1 1.0 BLK` (Black/invisible effect)
 
-**ASC - Air Slide Control Point** *(Undocumented)*?
+**ASC - Air Slide Control Point Wrapper Format** *(Documented)*
+
+ASC is primarily a **wrapper format** (like ASD) that can encapsulate any note type with air-related parameters:
 
 ```text
-ASC [measure] [tick] [cell] [width] [duration] [end_cell] [end_width]
+ASC [measure] [tick] [cell] [width] [wrapped_type] [param1] [duration] [end_cell] [end_width] [param2] [param3]
 ```
 
-Example: `ASC 14 288 4 4 21 3 4`
+**Fields:**
 
-**Note:** ASC notes can also be wrapped in the ASD format (see ASD Wrapper Format section), which would appear as:
-`ASD [measure] [tick] [cell] [width] ASC [param1] [duration] [end_cell] [end_width] [param2] [param3]`
+- `wrapped_type`: The note type being wrapped (SLD, ASC, CHR, etc.)
+- `param1`: First air parameter (usually 5.0)
+- `duration`: Duration in ticks
+- `end_cell`: End cell position
+- `end_width`: End width
+- `param2`: Second air parameter (usually 5.0-10.0)
+- `param3`: Third air parameter (usually "DEF")
+
+**Examples:**
+
+- `ASC 2 96 12 4 SLD 5.0 12 6 4 5.0 DEF` (wraps SLD)
+- `ASC 5 336 9 4 ASC 5.0 22 9 5 5.0 DEF` (wraps ASC recursively!)
+- `ASC 49 280 12 2 ASC 7.0 11 12 2 10.0 DEF` (nested ASC wrapping)
+
+**Key Discovery:** ASC can wrap any note type, including itself, creating recursive wrapper structures similar to ASD.
 
 #### AIR CRUSH Notes
 
@@ -363,14 +409,20 @@ None, this note type is only used as a null pointer(?) for some AIR or other not
 AUL 14 288 0 4 FLK DEF
 ```
 
-### ASD Wrapper Format
+### ASD/ASC Wrapper Formats
 
-ASD is a special 12-field wrapper format that can encapsulate any other note type with additional air-related parameters:
+Both ASD and ASC are special 12-field wrapper formats that can encapsulate any other note type with additional air-related parameters:
 
-**Schema:**
+**ASD Schema:**
 
 ```text
 ASD [measure] [tick] [cell] [width] [wrapped_type] [param1] [duration] [end_cell] [end_width] [param2] [param3]
+```
+
+**ASC Schema:**
+
+```text
+ASC [measure] [tick] [cell] [width] [wrapped_type] [param1] [duration] [end_cell] [end_width] [param2] [param3]
 ```
 
 **Fields:**
@@ -383,14 +435,26 @@ ASD [measure] [tick] [cell] [width] [wrapped_type] [param1] [duration] [end_cell
 - `param2`: Second air parameter (usually 5.0)
 - `param3`: Third air parameter (usually "DEF")
 
-**Examples:**
+**ASD Examples:**
 
 - `ASD 12 0 0 6 CHR 5.0 384 0 3 5.0 DEF` (wraps CHR)
 - `ASD 13 0 10 6 SLD 5.0 384 13 3 5.0 DEF` (wraps SLD)
 - `ASD 18 0 0 3 HLD 5.0 192 3 3 5.0 DEF` (wraps HLD)
 - `ASD 56 240 8 4 ASD 5.0 144 8 4 5.0 DEF` (wraps ASD recursively)
+- `ASD 2 108 6 4 ASC 5.0 84 6 4 5.0 DEF` (ASD wrapping ASC)
 
-**Note:** ASC notes can also use the ASD wrapper format, maintaining their AirSlideControlPoint behavior while using the extended 12-field structure.
+**ASC Examples:**
+
+- `ASC 2 96 12 4 SLD 5.0 12 6 4 5.0 DEF` (wraps SLD)
+- `ASC 5 336 9 4 ASC 5.0 22 9 5 5.0 DEF` (wraps ASC recursively!)
+- `ASC 49 280 12 2 ASC 7.0 11 12 2 10.0 DEF` (nested ASC wrapping)
+
+**Key Features:**
+
+- **Both formats are functionally equivalent** wrapper formats
+- **Recursive wrapping**: Both ASD and ASC can wrap themselves or each other
+- **Cross-format wrapping**: ASD can wrap ASC and vice versa
+- **Any note type**: Both can wrap any note type including TAP, CHR, SLD, HLD, etc.
 
 ---
 
@@ -439,14 +503,23 @@ All notes in C2S format follow a tab-separated value structure with the followin
 - `Mine` (MNE)
 - `Unknown(String)` for unrecognized note types
 
-### ASD Wrapper Implementation
+### ASD/ASC Wrapper Implementation
 
-The ASD wrapper is implemented as a special parsing mode that:
+Both ASD and ASC wrapper formats are implemented as a special parsing mode that:
 
 1. Extracts the wrapped note type from field 5
-2. Uses the wrapped type for note behavior (except ASC which maintains its type)
-3. Preserves all ASD parameters in a `WrappedNoteInfo` structure
+2. Uses the wrapped type for note behavior and type determination
+3. Preserves all wrapper parameters in a `WrappedNoteInfo` structure
 4. Allows detection of originally wrapped notes for conversion/export
+5. Supports recursive wrapping (ASD wrapping ASC, ASC wrapping ASC, etc.)
+
+**Key Implementation Details:**
+
+- **Both ASD and ASC** use identical 12-field wrapper structure
+- **Wrapped type resolution**: The actual note type is determined by the `wrapped_type` field
+- **Cross-format compatibility**: ASD can wrap ASC and vice versa
+- **Recursive support**: Both formats can wrap themselves indefinitely
+- **Metadata preservation**: Original wrapper format and parameters are preserved for round-trip conversion
 
 ### Unknown Note Types
 
@@ -458,39 +531,135 @@ This documentation represents our current understanding of the C2S v1.13.00 form
 
 ### Major Discoveries
 
-1. **ASD Wrapper Format**: ASD is not a standalone note type but a 12-field wrapper that can encapsulate any other note type with additional air parameters.
+1. **ASD/ASC Wrapper Formats**: Both ASD and ASC are 12-field wrapper formats that can encapsulate any other note type with additional air parameters. They are functionally equivalent wrapper formats.
 
-2. **ASC Dual Format**: ASC notes can use either standard 8-field format or the extended 12-field ASD wrapper format.
+2. **ASC Dual Nature**: ASC serves as both a wrapper format (12-field) and can appear as a wrapped note type within other wrappers.
 
-3. **Recursive Wrapping**: ASD can wrap other ASD notes, creating nested wrapper structures.
+3. **Recursive Wrapping**: Both ASD and ASC can wrap themselves or each other, creating nested wrapper structures (e.g., ASC wrapping ASC).
 
-4. **Parameter Patterns**: Most ASD notes use consistent parameters (param1=5.0, param2=5.0, param3="DEF").
+4. **Cross-Format Wrapping**: ASD can wrap ASC and ASC can wrap ASD, demonstrating format interoperability.
 
-5. **AIR CRUSH Implementation**: AIR CRUSH notes are implemented using ALD notes with "NON" parameter, allowing complex 3D voxel-based visual effects through multiple simultaneous notes.
+5. **Parameter Patterns**: Most wrapper notes use consistent parameters (param1=5.0, param2=5.0, param3="DEF").
 
-6. **🔥 AIR-ACTION Discovery**: **MAJOR BREAKTHROUGH** - AIR-ACTION notes are implemented as:
+6. **AIR CRUSH Implementation**: AIR CRUSH notes are implemented using ALD notes with "NON" parameter, allowing complex 3D voxel-based visual effects through multiple simultaneous notes.
+
+7. **🔥 AIR-ACTION Discovery**: **MAJOR BREAKTHROUGH** - AIR-ACTION notes are implemented as:
    - **ALD+NON notes**: Purple floating bars requiring hand movement in air sensor region
    - **AHX notes**: AIR-Hold with green ground bar (hybrid air/ground hold note), NOT AIR-ACTION
    - Multiple simultaneous ALD+NON notes create AIR CRUSH patterns (e.g., "melon pattern")
 
+8. **🌪️ ALD Visual Effects System**: **REVOLUTIONARY DISCOVERY** - ALD notes support advanced visual effects through the final parameter:
+   - **GRY**: Non-scoring atmospheric effects (wind motion lines, particle effects)
+   - **YEL**: Fake ExTap AIR-ACTIONs (yellow/golden coloring, always returns Justice)
+   - **BLK**: Invisible/hidden visual elements for polish and timing
+   - **NON**: Standard purple AIR-ACTIONs
+   - **DEF**: Regular air slide behavior
+   - Enables thematic chart design with atmospheric effects matching song content
+
 ### Implementation Status
 
 - ✅ **Fully Implemented**: TAP, CHR, FLK, HLD, HXD, SLD, SXD, SLC, SXC, AIR, AHD, AUR/AUL/ADW/ADR/ADL, MNE, DEF
-- ✅ **ASD Wrapper**: Complete implementation with metadata preservation
+- ✅ **ASD/ASC Wrapper Formats**: Complete implementation with metadata preservation and recursive wrapping support
 - ✅ **AHX**: AIR-Hold with green ground bar format documented and implemented
 - ✅ **AIR-ACTION**: ALD+NON implementation discovered and documented
 - ✅ **AIR CRUSH**: Multiple simultaneous ALD+NON patterns documented
-- ⚠️ **Partially Documented**: ALD (schema inferred), ASC (Wrapper format, schema inferred)
+- 🔥 **NEW: ALD Visual Effects System**: GRY/YEL/BLK effect parameters discovered and documented
+- ⚠️ **Partially Documented**: ALD (visual effect system inferred from chart analysis)
 
 ### Future Work
 
 - Validate ALD field interpretations with more chart samples
-- Research param1/param2/param3 semantic meanings in ASD format
+- Research param1/param2/param3 semantic meanings in ASD format  
 - Investigate AIR CRUSH pattern variations in newer chart versions
 - Document edge cases for AHX (AIR-Hold with green ground bar) usage
-- Research BLK parameter behavior in ALD notes
+- **Study ALD visual effects system** across different charts and themes
+- **Document behavioral differences** between GRY/YEL/BLK effect parameters
+- **Research thematic usage patterns** of visual effects in chart design
 - Validate ASC dual format behavior in more complex charts
+- Investigate if other note types support similar visual effect parameters
 
 ---
 
 *This specification is based on analysis of CHUNITHM chart files and may be updated as new information becomes available.*
+
+## Special System Commands
+
+### SFL - Scroll Flow/Speed Control
+
+SFL commands control the scroll speed and flow of notes during gameplay. This is extensively used in WORLD'S END charts to create special visual effects, or even some MASTER charts to create complex gameplay patterns, mostly seen in gimmick WORLD'S END or Crossovers from Arcaea.
+
+**Schema:**
+
+```text
+SFL [measure] [tick] [duration] [speed_multiplier]
+```
+
+**Fields:**
+
+- `measure`: Measure where the speed change begins
+- `tick`: Tick offset within the measure  
+- `duration`: Duration of the speed change in ticks
+- `speed_multiplier`: Speed multiplier value (can be decimal, negative, or extreme values)
+
+**Speed Multiplier Values:**
+
+- `1.0` - Normal scroll speed
+- `0.0` - **Stop scrolling** (notes freeze in place)
+- `0.5-0.9` - Slow motion effects
+- `1.2-4.0` - Faster scrolling
+- `10000.0` - **Extreme fast scroll** (notes disappear instantly)
+- `-95.5` - **Reverse scroll** (notes move backwards)
+- `-2.0` to `-0.5` - Various reverse/rewind effects
+
+**Thematic Usage Example (from Kyoufuu All Back WORLD'S END 戻):**
+
+```text
+# Normal oscillating wind effect
+SFL 4   0   24  1.200000     # Slight speedup
+SFL 4   24  48  0.900000     # Slight slowdown
+SFL 4   96  24  1.200000     # Speedup again
+SFL 4   120 48  0.900000     # Slowdown again
+
+# "Rail blown away" effect - instant disappearance  
+SFL 10  0   1   10000.000000 # Notes vanish instantly
+SFL 10  1   23  -2.000000    # Strong reverse
+SFL 10  24  24  -1.000000    # Medium reverse  
+SFL 10  48  24  -0.500000    # Light reverse
+SFL 10  72  24  0.500000     # Return to slow forward
+
+# Complete stop effect
+SFL 20  192 24  0.000000     # Freeze notes
+SFL 20  216 48  4.000000     # Sudden burst forward
+
+# Periodic reverse gusts
+SFL 6   95  1   -95.500000   # Strong reverse gust
+SFL 6   191 1   -95.500000   # Repeat pattern
+SFL 6   287 1   -95.500000   # Every 96 ticks
+SFL 6   383 1   -95.500000   # Regular intervals
+```
+
+**Visual Effects Created:**
+
+- 🌪️ **Wind oscillation**: Alternating 1.2/0.9 speed creates swaying motion
+- ⚡ **Instant vanish**: 10000.0 speed makes notes disappear immediately  
+- ⏪ **Reverse wind**: Negative values create notes flowing backwards
+- 🛑 **Frozen time**: 0.0 speed freezes all note movement
+- 💨 **Wind bursts**: Quick transitions between extreme values
+
+### Technical Details and Arcaea Crossover Usage
+
+The SFL (Scroll Flow/Speed) command is not only used for visual wind effects, but is also essential for recreating complex scroll speed patterns in crossover charts, especially from games like Arcaea. In these charts, SFL is used to mimic sudden speed-ups, slow-downs, stops, and even reverse scrolling, matching the original game's visual and gameplay effects.
+
+**Schema (from v1.08.00 spec):**
+
+| Beginning Measure | Offset | Duration | Multiplier |
+| ----------------- | ------ | -------- | ---------- |
+
+- **Multiplier precision:** The multiplier must have an accuracy of 0.000001 (six digits after the decimal point).
+- **Effect:** This value multiplies the player's current playfield speed, so notes will appear faster or slower based on this value. It is purely cosmetic and does not affect note timing or placement.
+- **Negative values:** Negative multipliers result in the board moving in reverse, often used for dramatic or gimmick effects (e.g., Fracture Ray MASTER).
+- **Crossover usage:** SFL is heavily used in Arcaea crossover charts to faithfully reproduce the original game's scroll speed changes, stops, and reversals.
+
+> Example: In Arcaea crossovers, SFL commands are used to create sudden stops, rapid speed-ups, and reverse scrolls, matching the original chart's visual flow and challenge.
+
+For more details, see the original v1.08.00 documentation and real chart examples.
