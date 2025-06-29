@@ -648,7 +648,7 @@ SFL 6   383 1   -95.500000   # Regular intervals
 
 ### Technical Details and Arcaea Crossover Usage
 
-The SFL (Scroll Flow/Speed) command is not only used for visual wind effects, but is also essential for recreating complex scroll speed patterns in crossover charts, especially from games like Arcaea. In these charts, SFL is used to mimic sudden speed-ups, slow-downs, stops, and even reverse scrolling, matching the original game's visual and gameplay effects.
+The SFL (Scroll Flow/Speed) command is not only used for visual scroll effects, but is also essential for recreating complex scroll speed patterns in crossover charts, especially from games like Arcaea. In these charts, SFL is used to mimic sudden speed-ups, slow-downs, stops, and even reverse scrolling, matching the original game's visual and gameplay effects.
 
 **Schema (from v1.08.00 spec):**
 
