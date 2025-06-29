@@ -446,11 +446,7 @@ The ASD wrapper is implemented as a special parsing mode that:
 
 ### Unknown Note Types
 
-- **AIR CRUSH variants**: Not yet documented, require investigation
-- **AIR-ACTION**: Format unknown, requires further analysis
-- Additional air note variants may exist in newer chart versions
-
-All unknown note types are parsed as `Unknown(String)` variants to ensure forward compatibility.
+Unknown note types are parsed as `Unknown(String)` variants to ensure forward compatibility. This allows the parser to handle future note types that may be introduced in later versions of the C2S format without breaking existing functionality.
 
 ## Summary
 
