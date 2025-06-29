@@ -119,9 +119,36 @@ Because when the devs give up?
 
 ---
 
-> **Rule of thumb:**  
+## “Can your tool be used to mass-convert official charts?”
+
+Technically, yes — if a user provides the original files, they can convert them. But:
+
+- This tool **does not** distribute or include any official content. That’s entirely on you.
+- It’s intended for interoperability: reading, converting, and creating charts from **modded installs**, **fan-made content**, or **simulator formats**.
+- Redistribution of official charts or converted data is **not endorsed or encouraged** by this project.
+- Use of this tool with proprietary content is at **your own risk**. The maintainers take no responsibility for what you do with it.
+
+We provide the tool — **you are responsible for how you use it.**
+
+As per the GPLv3:
+
+> THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY  
+> APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT  
+> HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY  
+> OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,  
+> THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR  
+> PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM  
+> IS WITH YOU. SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF  
+> ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+### 🧠 Rule of Thumb
+
 > If you're converting from a real disk dump, **do not share the disk image or original data files.**  
-> You may use converted charts in compatible simulators, but distributing the original (or converted) files as-is is strongly discouraged.
+> You may use converted charts in compatible simulators, but distributing the original or converted files is **strongly discouraged**.
+
+Still confused?
+
+➡️ See [`USAGE_POLICY.md`](./USAGE_POLICY.md) for more.
 
 ---
 

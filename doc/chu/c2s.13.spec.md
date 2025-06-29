@@ -188,7 +188,7 @@ AHD [measure] [tick] [cell] [width] [target_note] [duration]
 
 Example: `AHD 9 0 0 4 SLD 192`
 
-**AHX - AIR-ACTION Schema** *(Undocumented)*?
+**AHX - AIR-Hold with Green Ground Bar** *(Undocumented)*?
 
 ```text
 AHX [measure] [tick] [cell] [width] [target_note] [duration] [modifier]
@@ -198,19 +198,22 @@ AHX [measure] [tick] [cell] [width] [target_note] [duration] [modifier]
 - `duration`: Duration in ticks (typically 96)
 - `modifier`: Usually "DEF"
 
-AIR-ACTION notes are movement-triggered purple bars in the air sensor region. They require hand movement within the air sensor region rather than just hovering. **There are two types of AIR-ACTION implementations:**
+AHX notes are AIR-Hold notes with a green ground bar (hybrid air/ground hold note). They appear as a green bar on the ground with air sensor activation required.
 
-1. **AHX notes** - Individual AIR-ACTION with purple bar visual
-2. **ALD+NON notes** - Individual AIR-ACTION, or multiple simultaneous notes creating AIR CRUSH patterns
+**AIR-ACTION Implementation:**
 
-**Example alternating pattern (2/4 clap, alternate between ExTap-AirAction):**
+AIR-ACTION notes are movement-triggered purple bars in the air sensor region. They require hand movement within the air sensor region rather than just hovering. **AIR-ACTION notes are implemented using ALD+NON:**
+
+- **ALD+NON notes** - Purple floating bars that can be used individually or in patterns
+
+**Example alternating pattern (2/4 clap, ExTap + AIR-ACTION):**
 
 ```text
-AHX 65 192 12 4 SLD 96 DEF      # Single AIR-ACTION (purple bar)
+AHX 65 192 12 4 SLD 96 DEF      # AIR-Hold with green ground bar
 CHR 65 240 4 8 RS               # ExTap (1/8 offbeat)
-ALD 65 240 12 4 38400 5.0 1 12 4 5.0 NON  # Single AIR-ACTION
+ALD 65 240 12 4 38400 5.0 1 12 4 5.0 NON  # AIR-ACTION (purple floating bar)
 CHR 65 288 4 8 RS               # ExTap (1/8 offbeat)
-ALD 65 288 12 4 38400 5.0 1 12 4 5.0 NON  # Single AIR-ACTION
+ALD 65 288 12 4 38400 5.0 1 12 4 5.0 NON  # AIR-ACTION (purple floating bar)
 ```
 
 **AIR CRUSH patterns:** Multiple ALD+NON notes placed simultaneously create geometric patterns like the "melon pattern" (6 simultaneous AIR-ACTIONs).
@@ -303,14 +306,13 @@ The following air note types have been observed and documented based on actual c
 - `ADW` - AIR Down
 - `ADL` - AIR Down (with left diagonal hint)
 - `ADR` - AIR Down (with right diagonal hint)
-- `AHD` - AIR-ACTION Hover
+- `AHD` - AIR Hold (standard purple bar in air)
+- `AHX` - AIR-Hold with green ground bar (hybrid air/ground note)
+- `ALD` - Air slides, AIR-ACTION when used with NON parameter
+- `ASC` - Air Slide Control Points
 - `ASD` - AIR Slide (wrapper format)
 
-The following types require further investigation:
-
-- `ALD` - ??? (Undocumented air note variant)?
-- `ASC` - AIR Slide (with control point)? (Undocumented)
-- `AIR-ACTION` - AIR CRUSH notes? (TBD, needs documentation)
+**AIR-ACTION Implementation:** AIR-ACTION notes (purple floating bars requiring movement) are implemented using `ALD` notes with the `NON` parameter. Multiple simultaneous ALD+NON notes create AIR CRUSH patterns.
 
 > **Note**: AIR-ACTION notes are triggered by any movement within the air sensor region - this includes moving up, down, or waving back and forth. The timing windows for these notes are generally more generous than standard notes.
 
@@ -413,7 +415,7 @@ All notes in C2S format follow a tab-separated value structure with the followin
 ## Implementation Notes
 
 > **NOTE:**
-> All the types marked with `?` (ALD, ASC, DEF, AirAction) are not fully documented and may differ from actual specifications.
+> All the types marked with `?` (ALD, ASC, DEF) are not fully documented and may differ from actual specifications.
 > Testing with real chart data is required to confirm the exact format.
 
 ### Enum Variants in Rust Implementation
@@ -429,11 +431,11 @@ All notes in C2S format follow a tab-separated value structure with the followin
 - `Flick` (FLK)
 - `Air` (AIR)
 - `AirHold` (AHD)
-- `AirSlide` (ALD)? *- Undocumented, schema inferred*
+- `AirHoldGround` (AHX)? *- AIR-Hold with green ground bar, schema inferred*
+- `AirSlide` (ALD)? *- Air slides, AIR-ACTION when used with NON parameter*
 - `AirSlideControlPoint` (ASC)? *- Undocumented, schema inferred*
 - `AirDirectional` with variants for (AUR, AUL, ADW, ADR, ADL)
 - `Default` (DEF)? *- Placeholder note type*
-- `AirAction` for AIR-ACTION notes? *- Format unknown*
 - `Mine` (MNE)
 - `Unknown(String)` for unrecognized note types
 
@@ -466,25 +468,28 @@ This documentation represents our current understanding of the C2S v1.13.00 form
 
 5. **AIR CRUSH Implementation**: AIR CRUSH notes are implemented using ALD notes with "NON" parameter, allowing complex 3D voxel-based visual effects through multiple simultaneous notes.
 
-6. **🔥 AIR-ACTION Dual System**: **MAJOR BREAKTHROUGH** - AIR-ACTION notes have two implementations that can be used interchangeably:
-   - **AHX notes**: Standard AIR-ACTION with purple bar visual
-   - **ALD+NON notes**: AIR-ACTION with voxel-based CRUSH effects
-   - Both are movement-triggered and can alternate in complex patterns (e.g., 2/4 clap sequences)
+6. **🔥 AIR-ACTION Discovery**: **MAJOR BREAKTHROUGH** - AIR-ACTION notes are implemented as:
+   - **ALD+NON notes**: Purple floating bars requiring hand movement in air sensor region
+   - **AHX notes**: AIR-Hold with green ground bar (hybrid air/ground hold note), NOT AIR-ACTION
+   - Multiple simultaneous ALD+NON notes create AIR CRUSH patterns (e.g., "melon pattern")
 
 ### Implementation Status
 
 - ✅ **Fully Implemented**: TAP, CHR, FLK, HLD, HXD, SLD, SXD, SLC, SXC, AIR, AHD, AUR/AUL/ADW/ADR/ADL, MNE, DEF
 - ✅ **ASD Wrapper**: Complete implementation with metadata preservation
-- ✅ **AIR-ACTION**: AHX format documented, ALD+NON dual implementation discovered
+- ✅ **AHX**: AIR-Hold with green ground bar format documented and implemented
+- ✅ **AIR-ACTION**: ALD+NON implementation discovered and documented
+- ✅ **AIR CRUSH**: Multiple simultaneous ALD+NON patterns documented
 - ⚠️ **Partially Documented**: ALD (schema inferred), ASC (Wrapper format, schema inferred)
 
 ### Future Work
 
-- Validate AIR-ACTION dual system with more chart samples
-- Research exact visual differences between AHX and ALD+NON AIR-ACTIONs
-- Investigate AIR CRUSH note variants in newer chart versions
 - Validate ALD field interpretations with more chart samples
 - Research param1/param2/param3 semantic meanings in ASD format
+- Investigate AIR CRUSH pattern variations in newer chart versions
+- Document edge cases for AHX (AIR-Hold with green ground bar) usage
+- Research BLK parameter behavior in ALD notes
+- Validate ASC dual format behavior in more complex charts
 
 ---
 
