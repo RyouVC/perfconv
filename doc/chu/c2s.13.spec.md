@@ -529,7 +529,7 @@ Unknown note types are parsed as `Unknown(String)` variants to ensure forward co
 
 This documentation represents our current understanding of the C2S v1.13.00 format based on reverse engineering and analysis of actual chart files. Key findings include:
 
-### Major Discoveries
+### New features introduced in C2S v1.12.00 and v1.13.00
 
 1. **ASD/ASC Wrapper Formats**: Both ASD and ASC are 12-field wrapper formats that can encapsulate any other note type with additional air parameters. They are functionally equivalent wrapper formats.
 
@@ -543,12 +543,12 @@ This documentation represents our current understanding of the C2S v1.13.00 form
 
 6. **AIR CRUSH Implementation**: AIR CRUSH notes are implemented using ALD notes with "NON" parameter, allowing complex 3D voxel-based visual effects through multiple simultaneous notes.
 
-7. **🔥 AIR-ACTION Discovery**: **MAJOR BREAKTHROUGH** - AIR-ACTION notes are implemented as:
+7. **🔥 AIR-ACTIONs** - AIR-ACTION notes are implemented as:
    - **ALD+NON notes**: Purple floating bars requiring hand movement in air sensor region
    - **AHX notes**: AIR-Hold with green ground bar (hybrid air/ground hold note), NOT AIR-ACTION
    - Multiple simultaneous ALD+NON notes create AIR CRUSH patterns (e.g., "melon pattern")
 
-8. **🌪️ ALD Visual Effects System**: **REVOLUTIONARY DISCOVERY** - ALD notes support advanced visual effects through the final parameter:
+8. **🌪️ ALD Visual Effects System** - ALD notes support advanced visual effects through the final parameter:
    - **GRY**: Non-scoring atmospheric effects (wind motion lines, particle effects)
    - **YEL**: Fake ExTap AIR-ACTIONs (yellow/golden coloring, always returns Justice)
    - **BLK**: Invisible/hidden visual elements for polish and timing
