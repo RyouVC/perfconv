@@ -252,6 +252,8 @@ Example: `ASC 14 288 4 4 21 3 4`
 
 AIR CRUSH notes are **AIR-ACTION notes (ALD+NON) arranged in specific patterns and played simultaneously**. They create complex 3D voxel-based visual effects in the air sensor region when multiple ALD+NON notes are triggered at the same time.
 
+![A screenshot of AIR CRUSH notes](https://chunithm.org/basic/images/air-crush.png)
+
 **Key Understanding:** AIR CRUSH is not a separate note type, but rather a **visual/gameplay effect** created when multiple ALD+NON notes (AIR-ACTIONs) are arranged in specific geometric patterns.
 
 **Implementation:**
@@ -287,7 +289,7 @@ This creates a symmetrical spherical pattern with:
 - **Varying widths** (6, 4, 2) for curved appearance
 - **Different parameter values** (1.0-6.0) for layering effects
 
-![A screenshot of AIR CRUSH notes](https://chunithm.org/basic/images/air-crush.png)
+![A screenshot of the aforementioned melon pattern](./asset/kyoufu-melon.png)
 
 ---
 
