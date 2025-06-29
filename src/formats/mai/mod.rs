@@ -1,0 +1,1 @@
+//! A certain washing machine game.
