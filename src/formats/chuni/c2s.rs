@@ -11,6 +11,8 @@ use crate::formats::chuni::{AirDirection, ChuniNoteType};
 // This chart effectively served as our "Rosetta Stone" for decoding the
 // CHUNITHM NEW (v1.13.00+) C2S format structure.
 
+// todo: implement end tags
+
 const DEFAULT_RESOLUTION: u32 = 384;
 
 /// Static mapping between note type strings and ChuniNoteType variants
