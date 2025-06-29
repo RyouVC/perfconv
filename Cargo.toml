@@ -6,6 +6,7 @@ license = "GPL-3.0-or-later"
 description = "A tool for parsing Performai game levels"
 
 [dependencies]
+chumsky = "0.10.1"
 clap = { version = "4.5.40", features = ["derive"] }
 eyre = "0.6.12"
 thiserror = "2.0.12"
