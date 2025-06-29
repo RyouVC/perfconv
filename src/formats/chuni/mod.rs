@@ -42,17 +42,27 @@ pub enum ChuniNoteType {
     Air,
     /// An air hold note (AHD)
     AirHold,
+    /// AIR-Hold with green ground bar (AHX)? - hybrid air/ground hold note
+    /// Appears as a green bar on the ground with air sensor activation
+    /// ? = inferred from gameplay analysis, not officially documented  
+    AirHoldGround,
     /// Directional air notes (AUR, AUL, ADW, ADR, ADL)
     AirDirectional(AirDirection),
-    /// AIR-ACTION notes - triggered by movement within air sensor region
-    /// These are purple bars that require hand movement in the air sensor
-    AirAction,
+    /// Air slide notes (ALD) - like slides but in the air sensor region
+    /// When used with "NON" parameter, creates AIR-ACTION notes (purple floating bars)
+    /// Multiple simultaneous ALD+NON notes create AIR CRUSH patterns (e.g., "melon pattern")
+    /// ALD+NON requires hand movement in air sensor, used in clap patterns and complex formations
+    AirSlide,
+    /// Air slide control points (ASC) - like slide control points but in the air sensor region
+    AirSlideControlPoint,
 
     /// A mine note that must not be touched (MNE)
     Mine,
     /// A default placeholder note (DEF)
     /// Used as invisible placeholder to maintain chart structure
     Default,
+    /// Unknown note type that needs investigation
+    Unknown(String),
 }
 
 /// Calculates the offset of a note or timing point from the measure based on the resolution.

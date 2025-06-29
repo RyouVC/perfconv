@@ -3,7 +3,13 @@
 //! note: This format is TSV-based, with each tab-separated value representing a different field.
 use crate::formats::chuni::{AirDirection, ChuniNoteType};
 
-use chumsky::prelude::*;
+// Special Thanks:
+// - Yukopi, for composing [*Kyoufuu All Back*](https://youtu.be/D6DVTLvOupE)
+// - アミノハバキリ, for charting the Expert-level version in prod
+// - SEGA for actually deciding to put this song in-game for LUMINOUS PLUS
+//
+// This chart effectively served as our "Rosetta Stone" for decoding the
+// CHUNITHM NEW (v1.13.00+) C2S format structure.
 
 const DEFAULT_RESOLUTION: u32 = 384;
 
@@ -29,8 +35,11 @@ static NOTE_TYPE_PAIRS: &[(&str, ChuniNoteType)] = &[
     ),
     ("ADL", ChuniNoteType::AirDirectional(AirDirection::DownLeft)),
     ("AHD", ChuniNoteType::AirHold),
+    ("AHX", ChuniNoteType::AirHoldGround), // AIR-Hold with green ground bar (hybrid air/ground)?
+    ("ALD", ChuniNoteType::AirSlide),
+    ("ASC", ChuniNoteType::AirSlideControlPoint),
     ("MNE", ChuniNoteType::Mine),
-    // Note: AirAction is intentionally omitted as the format is unknown
+    // Note: ASD is handled specially as a wrapper format, not a standalone note type
 ];
 
 /// Convert a note type string to ChuniNoteType
@@ -39,7 +48,11 @@ pub fn string_to_note_type(s: &str) -> Result<ChuniNoteType, String> {
         .iter()
         .find(|(key, _)| *key == s)
         .map(|(_, note_type)| note_type.clone())
-        .ok_or_else(|| format!("Unknown note type: {}", s))
+        .or_else(|| {
+            // For unknown types, wrap them in Unknown variant
+            Some(ChuniNoteType::Unknown(s.to_string()))
+        })
+        .ok_or_else(|| format!("Failed to create note type for: {}", s))
 }
 
 pub fn c2s_note_type_to_string(note_type: &ChuniNoteType) -> String {
@@ -52,7 +65,7 @@ pub fn c2s_note_type_to_string(note_type: &ChuniNoteType) -> String {
 
     // Handle special cases not in the map
     match note_type {
-        ChuniNoteType::AirAction => todo!("AIR-ACTION note format unknown"),
+        ChuniNoteType::Unknown(s) => s.clone(),
         _ => panic!("Unknown note type: {:?}", note_type),
     }
 }
@@ -135,11 +148,26 @@ pub struct TimeSignature {
     pub denominator: u32,
 }
 
+/// Information about a note that was wrapped in ASD/ASC format
+#[derive(Debug, Clone, PartialEq)]
+pub struct WrappedNoteInfo {
+    /// The original format type ("ASD" or "ASC")
+    pub original_format: String,
+    /// The wrapped note type string (e.g., "CHR", "SLD", "TAP")
+    pub wrapped_type: String,
+    /// First parameter from ASD format (usually 5.0)
+    pub param1: f32,
+    /// Second parameter from ASD format (usually 5.0)
+    pub param2: f32,
+    /// Third parameter from ASD format (usually "DEF")
+    pub param3: String,
+}
+
 /// An individual note in a C2S chart
 ///
 /// This struct represents a single note in a C2S chart, including its type, position,
 /// and any additional properties.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Note {
     /// The type of the note, such as TAP, HLD, SLD, etc.
     pub note_type: ChuniNoteType,
@@ -153,10 +181,12 @@ pub struct Note {
     pub width: u32,
     /// Duration of the note in ticks/measure, if applicable (HLD, SLD, SLC, AHD)
     pub duration: Option<u32>,
-    /// The end cell of the note, if applicable (SLD, SLC)
-    pub end_cell: Option<u32>,
-    /// The end width of the note, if applicable (SLD, SLC)
-    pub end_width: Option<u32>,
+    /// The end cell of the note, if applicable (SLD, SLC, ALD, ASC)
+    /// For air slides, this can be a floating point value
+    pub end_cell: Option<f32>,
+    /// The end width of the note, if applicable (SLD, SLC, ALD, ASC)
+    /// For air slides, this can be a floating point value
+    pub end_width: Option<f32>,
     /// Target note for air notes (AIR, AUR, AUL, AHD, ADW, ADR, ADL)
     /// This specifies what note the air note "leeches" off of
     pub target_note: Option<String>,
@@ -165,26 +195,50 @@ pub struct Note {
     /// Unknown field for FLK notes (always "L")
     // note: Presumably always "L" because the game assumes the default flick direction is left
     pub flick_modifier: Option<String>,
+    /// Information about the wrapped note if this was parsed from ASD/ASC format
+    pub wrapped_note_info: Option<WrappedNoteInfo>,
 }
+
 impl Note {
     pub fn from_line(line: &str) -> Result<Self, String> {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
-        // todo: port to chumsky
         if parts.is_empty() {
             return Err("Empty line".to_string());
+        }
+
+        // Handle ASD notes by converting them to regular notes
+        if parts[0].to_uppercase() == "ASD" {
+            return Note::from_asd_line(line);
+        }
+
+        // Handle ASC notes with ASD format (12 fields) by converting them to regular notes
+        if parts[0].to_uppercase() == "ASC" && parts.len() == 12 {
+            return Note::from_asd_line(line);
         }
 
         let note_type = string_to_note_type(&parts[0].to_uppercase())?;
 
         if parts.len() < 5 {
-            return Err("Not enough fields".to_string());
+            return Err(format!(
+                "Not enough fields: expected at least 5, got {}. Line: '{}'",
+                parts.len(),
+                line
+            ));
         }
 
-        let measure = parts[1].parse::<u32>().map_err(|e| e.to_string())?;
-        let offset = parts[2].parse::<u32>().map_err(|e| e.to_string())?;
-        let cell = parts[3].parse::<u32>().map_err(|e| e.to_string())?;
-        let width = parts[4].parse::<u32>().map_err(|e| e.to_string())?;
+        let measure = parts[1]
+            .parse::<u32>()
+            .map_err(|e| format!("Invalid measure '{}': {}", parts[1], e))?;
+        let offset = parts[2]
+            .parse::<u32>()
+            .map_err(|e| format!("Invalid offset '{}': {}", parts[2], e))?;
+        let cell = parts[3]
+            .parse::<u32>()
+            .map_err(|e| format!("Invalid cell '{}': {}", parts[3], e))?;
+        let width = parts[4]
+            .parse::<u32>()
+            .map_err(|e| format!("Invalid width '{}': {}", parts[4], e))?;
 
         let mut duration = None;
         let mut end_cell = None;
@@ -192,19 +246,28 @@ impl Note {
         let mut target_note = None;
         let mut chr_modifier = None;
         let mut flick_modifier = None;
+        let mut wrapped_note_info = None;
 
+        // Parse additional fields based on note type
         match note_type {
             ChuniNoteType::Hold | ChuniNoteType::ExHold => {
                 if parts.len() > 5 {
-                    duration = parts[5].parse::<u32>().ok();
+                    duration = Some(
+                        parts[5]
+                            .parse::<u32>()
+                            .map_err(|e| format!("Invalid hold duration '{}': {}", parts[5], e))?,
+                    );
                 }
             }
             ChuniNoteType::AirHold => {
                 if parts.len() > 5 {
-                    target_note = parts[5].to_string().into();
+                    target_note = Some(parts[5].to_string());
                 }
                 if parts.len() > 6 {
-                    duration = parts[6].parse::<u32>().ok();
+                    duration =
+                        Some(parts[6].parse::<u32>().map_err(|e| {
+                            format!("Invalid air hold duration '{}': {}", parts[6], e)
+                        })?);
                 }
             }
             ChuniNoteType::Slide
@@ -212,18 +275,27 @@ impl Note {
             | ChuniNoteType::SlideControlPoint
             | ChuniNoteType::ExSlideControlPoint => {
                 if parts.len() > 5 {
-                    duration = parts[5].parse::<u32>().ok();
+                    duration =
+                        Some(parts[5].parse::<u32>().map_err(|e| {
+                            format!("Invalid slide duration '{}': {}", parts[5], e)
+                        })?);
                 }
                 if parts.len() > 6 {
-                    end_cell = parts[6].parse::<u32>().ok();
+                    end_cell =
+                        Some(parts[6].parse::<f32>().map_err(|e| {
+                            format!("Invalid slide end_cell '{}': {}", parts[6], e)
+                        })?);
                 }
                 if parts.len() > 7 {
-                    end_width = parts[7].parse::<u32>().ok();
+                    end_width =
+                        Some(parts[7].parse::<f32>().map_err(|e| {
+                            format!("Invalid slide end_width '{}': {}", parts[7], e)
+                        })?);
                 }
             }
             ChuniNoteType::ExTap => {
                 if parts.len() > 5 {
-                    chr_modifier = parts[5].to_string().into();
+                    chr_modifier = Some(parts[5].to_string());
                 }
             }
             ChuniNoteType::Flick => {
@@ -231,14 +303,62 @@ impl Note {
             }
             ChuniNoteType::Air | ChuniNoteType::AirDirectional(_) => {
                 if parts.len() > 5 {
-                    target_note = parts[5].to_string().into();
+                    target_note = Some(parts[5].to_string());
                 }
             }
-            ChuniNoteType::AirAction => {
-                // TODO: Unknown field structure for AIR-ACTION notes
-                // Need to investigate what fields AAC notes use
+            ChuniNoteType::AirSlide | ChuniNoteType::AirSlideControlPoint => {
+                // Assume ALD/ASC behave like regular slides but in air sensor region
+                if parts.len() > 5 {
+                    duration = Some(parts[5].parse::<u32>().map_err(|e| {
+                        format!("Invalid air slide duration '{}': {}", parts[5], e)
+                    })?);
+                }
+                if parts.len() > 6 {
+                    end_cell = Some(parts[6].parse::<f32>().map_err(|e| {
+                        format!("Invalid air slide end_cell '{}': {}", parts[6], e)
+                    })?);
+                }
+                if parts.len() > 7 {
+                    end_width = Some(parts[7].parse::<f32>().map_err(|e| {
+                        format!("Invalid air slide end_width '{}': {}", parts[7], e)
+                    })?);
+                }
+            }
+            ChuniNoteType::AirHoldGround => {
+                // AHX - AIR-Hold with green ground bar (hybrid air/ground hold note)?
+                // Format appears to be: AHX [measure] [tick] [cell] [width] [target_note] [duration] [modifier]
+                if parts.len() > 5 {
+                    target_note = Some(parts[5].to_string());
+                }
+                if parts.len() > 6 {
+                    duration = Some(parts[6].parse::<u32>().map_err(|e| {
+                        format!("Invalid air hold ground duration '{}': {}", parts[6], e)
+                    })?);
+                }
+                // parts[7] appears to be a modifier (usually "DEF")
+            }
+            ChuniNoteType::Unknown(_) => {
+                // For unknown types, we don't know the field structure
+                // Just parse basic fields and ignore additional ones
             }
             _ => {}
+        }
+
+        // If the note is of type ASD or ASC, parse the additional wrapped note information
+        if parts[0].to_uppercase() == "ASD"
+            || (parts[0].to_uppercase() == "ASC" && parts.len() == 12)
+        {
+            wrapped_note_info = Some(WrappedNoteInfo {
+                original_format: parts[0].to_string(),
+                wrapped_type: parts[5].to_string(),
+                param1: parts[6]
+                    .parse::<f32>()
+                    .map_err(|e| format!("Invalid param1 for ASD/ASC note '{}': {}", line, e))?,
+                param2: parts[7]
+                    .parse::<f32>()
+                    .map_err(|e| format!("Invalid param2 for ASD/ASC note '{}': {}", line, e))?,
+                param3: parts[11].to_string(),
+            });
         }
 
         Ok(Note {
@@ -253,6 +373,90 @@ impl Note {
             target_note,
             chr_modifier,
             flick_modifier,
+            wrapped_note_info,
+        })
+    }
+
+    /// Converts an ASD (Air Special Data) line or ASC line with ASD format into a regular Note
+    /// ASD Format: ASD measure tick cell width type param1 duration end_cell end_width param2 param3
+    /// ASC Format: ASC measure tick cell width type param1 duration end_cell end_width param2 param3
+    pub fn from_asd_line(line: &str) -> Result<Self, String> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+
+        if parts.len() != 12 {
+            return Err(format!(
+                "ASD/ASC line must have exactly 12 fields, got {}. Line: '{}'",
+                parts.len(),
+                line
+            ));
+        }
+
+        let note_type_prefix = parts[0].to_uppercase();
+        let measure = parts[1]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid measure: '{}'", parts[1]))?;
+        let offset = parts[2]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid offset: '{}'", parts[2]))?;
+        let cell = parts[3]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid cell: '{}'", parts[3]))?;
+        let width = parts[4]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid width: '{}'", parts[4]))?;
+
+        let wrapped_type = parts[5].to_string();
+        let param1 = parts[6]
+            .parse::<f32>()
+            .map_err(|_| format!("Invalid param1: '{}'", parts[6]))?;
+        let duration = parts[7]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid duration: '{}'", parts[7]))?;
+        let end_cell = parts[8]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid end_cell: '{}'", parts[8]))?;
+        let end_width = parts[9]
+            .parse::<u32>()
+            .map_err(|_| format!("Invalid end_width: '{}'", parts[9]))?;
+        let param2 = parts[10]
+            .parse::<f32>()
+            .map_err(|_| format!("Invalid param2: '{}'", parts[10]))?;
+        let param3 = parts[11].to_string();
+
+        // Determine the note type based on the prefix and wrapped type
+        let note_type = if note_type_prefix == "ASD" {
+            // For ASD notes, use the wrapped note type
+            string_to_note_type(&wrapped_type.to_uppercase())?
+        } else if note_type_prefix == "ASC" {
+            // For ASC notes, use AirSlideControlPoint regardless of wrapped type
+            ChuniNoteType::AirSlideControlPoint
+        } else {
+            return Err(format!(
+                "Invalid note type prefix for ASD format: {}",
+                note_type_prefix
+            ));
+        };
+
+        // For ASD/ASC notes, we preserve the wrapped note type but with ASD timing/positioning
+        Ok(Note {
+            note_type,
+            measure,
+            offset,
+            cell,
+            width,
+            duration: Some(duration),
+            end_cell: Some(end_cell as f32),
+            end_width: Some(end_width as f32),
+            target_note: None,
+            chr_modifier: None,
+            flick_modifier: None,
+            wrapped_note_info: Some(WrappedNoteInfo {
+                original_format: note_type_prefix,
+                wrapped_type,
+                param1,
+                param2,
+                param3,
+            }),
         })
     }
 }
@@ -272,6 +476,7 @@ impl Note {
             target_note: None,
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -289,6 +494,7 @@ impl Note {
             target_note: None,
             chr_modifier: Some(modifier),
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -306,6 +512,7 @@ impl Note {
             target_note: None,
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -316,8 +523,8 @@ impl Note {
         cell: u32,
         width: u32,
         duration: u32,
-        end_cell: u32,
-        end_width: u32,
+        end_cell: f32,
+        end_width: f32,
     ) -> Self {
         Self {
             note_type: ChuniNoteType::Slide,
@@ -331,6 +538,7 @@ impl Note {
             target_note: None,
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -341,8 +549,8 @@ impl Note {
         cell: u32,
         width: u32,
         duration: u32,
-        end_cell: u32,
-        end_width: u32,
+        end_cell: f32,
+        end_width: f32,
     ) -> Self {
         Self {
             note_type: ChuniNoteType::SlideControlPoint,
@@ -356,6 +564,7 @@ impl Note {
             target_note: None,
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -373,6 +582,7 @@ impl Note {
             target_note: None,
             chr_modifier: None,
             flick_modifier: Some("L".to_string()),
+            wrapped_note_info: None,
         }
     }
 
@@ -390,6 +600,7 @@ impl Note {
             target_note: Some(target_note),
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -414,6 +625,7 @@ impl Note {
             target_note: Some(target_note),
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -438,6 +650,7 @@ impl Note {
             target_note: Some(target_note),
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
     }
 
@@ -455,7 +668,27 @@ impl Note {
             target_note: None,
             chr_modifier: None,
             flick_modifier: None,
+            wrapped_note_info: None,
         }
+    }
+
+    /// Returns true if this note was parsed from ASD or ASC with ASD format
+    pub fn is_wrapped_note(&self) -> bool {
+        self.wrapped_note_info.is_some()
+    }
+
+    /// Returns the original format if this was a wrapped note ("ASD" or "ASC")
+    pub fn get_original_format(&self) -> Option<&str> {
+        self.wrapped_note_info
+            .as_ref()
+            .map(|info| info.original_format.as_str())
+    }
+
+    /// Returns the wrapped note type if this was a wrapped note
+    pub fn get_wrapped_type(&self) -> Option<&str> {
+        self.wrapped_note_info
+            .as_ref()
+            .map(|info| info.wrapped_type.as_str())
     }
 }
 
@@ -521,6 +754,7 @@ TAP 9 288 9 4"#;
         let mut notes = Vec::new();
 
         for line in lines {
+            println!("Parsing line: {}", line);
             match Note::from_line(line) {
                 Ok(note) => {
                     println!("{:?}", note);
@@ -529,5 +763,91 @@ TAP 9 288 9 4"#;
                 Err(e) => panic!("Failed to parse note: {}", e),
             }
         }
+    }
+
+    // #[test]
+    // fn test_chronomia_mas_1130() {
+    //     let lines: Vec<&str> =
+    //         include_str!("../../../test/chuni/c2s/chronomia_master.notesonly.c2s")
+    //             .lines()
+    //             .collect();
+    //     let mut notes = Vec::new();
+
+    //     for line in lines {
+    //         println!("Parsing line: {}", line);
+    //         match Note::from_line(line) {
+    //             Ok(note) => {
+    //                 println!("{:?}", note);
+    //                 notes.push(note);
+    //             }
+    //             Err(e) => panic!("Failed to parse note: {}", e),
+    //         }
+    //     }
+    // }
+
+    // #[test]
+    // fn test_kyoufu_expert_1130() {
+    //     let lines: Vec<&str> = include_str!("../../../test/chuni/c2s/kyoufu_expert.notesonly.c2s")
+    //         .lines()
+    //         .collect();
+    //     let mut notes = Vec::new();
+
+    //     for line in lines {
+    //         if line.trim().is_empty() {
+    //             continue;
+    //         }
+    //         println!("Parsing line: {}", line);
+    //         match Note::from_line(line) {
+    //             Ok(note) => {
+    //                 println!("{:?}", note);
+    //                 notes.push(note);
+    //             }
+    //             Err(e) => {
+    //                 println!("Failed to parse note: {} (line: {})", e, line);
+    //                 // Don't panic, just continue to see all unknown types
+    //             }
+    //         }
+    //     }
+
+    //     println!("Total notes parsed: {}", notes.len());
+    // }
+
+    #[test]
+    fn test_asd_wrapped_note_info() {
+        // Test ASD note preservation
+        let asd_line = "ASD 12 0 0 6 CHR 5.0 384 0 3 5.0 DEF";
+        let note = Note::from_line(asd_line).unwrap();
+
+        assert_eq!(note.note_type, ChuniNoteType::ExTap);
+        assert_eq!(note.measure, 12);
+        assert_eq!(note.offset, 0);
+        assert_eq!(note.duration, Some(384));
+        assert_eq!(note.end_cell, Some(0.0));
+        assert_eq!(note.end_width, Some(3.0));
+
+        // Check that ASD information is preserved
+        assert!(note.wrapped_note_info.is_some());
+        let wrapped_info = note.wrapped_note_info.unwrap();
+        assert_eq!(wrapped_info.original_format, "ASD");
+        assert_eq!(wrapped_info.wrapped_type, "CHR");
+        assert_eq!(wrapped_info.param1, 5.0);
+        assert_eq!(wrapped_info.param2, 5.0);
+        assert_eq!(wrapped_info.param3, "DEF");
+
+        // Test ASC note with ASD format
+        let asc_line = "ASC 14 288 4 4 CHR 5.0 21 3 4 5.0 DEF";
+        let note = Note::from_line(asc_line).unwrap();
+
+        assert_eq!(note.note_type, ChuniNoteType::AirSlideControlPoint);
+        assert!(note.wrapped_note_info.is_some());
+        let wrapped_info = note.wrapped_note_info.unwrap();
+        assert_eq!(wrapped_info.original_format, "ASC");
+        assert_eq!(wrapped_info.wrapped_type, "CHR");
+
+        // Test regular note has no wrapped info
+        let regular_line = "TAP 8 0 6 4";
+        let note = Note::from_line(regular_line).unwrap();
+        assert_eq!(note.note_type, ChuniNoteType::Tap);
+        assert!(note.wrapped_note_info.is_none());
     }
 }

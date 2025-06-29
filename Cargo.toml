@@ -10,3 +10,4 @@ chumsky = "0.10.1"
 clap = { version = "4.5.40", features = ["derive"] }
 eyre = "0.6.12"
 thiserror = "2.0.12"
+tracing = "0.1.41"

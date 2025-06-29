@@ -18,7 +18,7 @@ It is **not** a replacement for the official games, nor does it include any copy
 
 ---
 
-### 🔒 Disclaimer: These Games Are Still Active
+## 🔒 Disclaimer: These Games Are Still Active
 
 The **Performai** series — _CHUNITHM_, _maimai DX_, and _O.N.G.E.K.I_ — are still **actively developed and supported by SEGA**, primarily in Japanese arcades and a few licensed international locations.
 
