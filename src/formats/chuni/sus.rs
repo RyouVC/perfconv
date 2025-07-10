@@ -207,6 +207,23 @@ impl SusLine {
     }
 }
 
+/// Map SUS type digit to ChuniNoteType
+fn sus_type_to_chuni_note_type(type_digit: u8, slide_type: Option<u8>) -> ChuniNoteType {
+    match slide_type {
+        Some(3) | Some(4) => ChuniNoteType::Slide,
+        _ => match type_digit {
+            1 | 2 | 3 | 4 | 5 | 6 => ChuniNoteType::Tap,
+            // Hold: 2xy
+            0x20..=0x2F => ChuniNoteType::Hold,
+            // Slide: 3xy, 4xy
+            0x30..=0x3F | 0x40..=0x4F => ChuniNoteType::Slide,
+            // Directional: 5x
+            0x50..=0x5F => ChuniNoteType::Flick,
+            _ => ChuniNoteType::Unknown(format!("SUS type {:X}", type_digit)),
+        },
+    }
+}
+
 impl SusChart {
     /// Add any SusLine
     pub fn new_line(&mut self, line: SusLine) -> &mut Self {
@@ -242,11 +259,13 @@ impl SusChart {
 }
 
 /// Represents a single note or event in SUS.
+use super::ChuniNoteType;
+
 #[derive(Debug, Clone)]
 pub struct Note {
     pub lane: u8,
     pub tick: u32,
-    pub note_type: String,
+    pub note_type: ChuniNoteType,
     pub width: u8,
 }
 
@@ -381,6 +400,18 @@ fn parse_chart_data_line(line: &str) -> Option<SusLine> {
                 Some('1') if type_and_lane.len() >= 2 => {
                     // Tap notes (10-16)
                     if let Some(lane) = parse_lane(type_and_lane.chars().nth(1).unwrap_or('0')) {
+                        // Always use ChuniNoteType::Tap for tap lines
+                        if data.len() >= 2 {
+                            let width_digit = data.chars().nth(1).unwrap();
+                            let width = width_digit.to_digit(36).unwrap_or(1) as u8;
+                            let note = Note {
+                                lane,
+                                tick: 0,
+                                note_type: ChuniNoteType::Tap,
+                                width,
+                            };
+                            return Some(SusLine::Note(note));
+                        }
                         return Some(SusLine::TapNotes {
                             measure,
                             lane,
@@ -394,6 +425,18 @@ fn parse_chart_data_line(line: &str) -> Option<SusLine> {
                     if let (Some(lane), Some(channel)) =
                         (parse_lane(chars[1]), parse_lane(chars[2]))
                     {
+                        // Always use ChuniNoteType::Hold for hold lines
+                        if data.len() >= 2 {
+                            let width_digit = data.chars().nth(1).unwrap();
+                            let width = width_digit.to_digit(36).unwrap_or(1) as u8;
+                            let note = Note {
+                                lane,
+                                tick: 0,
+                                note_type: ChuniNoteType::Hold,
+                                width,
+                            };
+                            return Some(SusLine::Note(note));
+                        }
                         return Some(SusLine::HoldNotes {
                             measure,
                             lane,
@@ -409,6 +452,18 @@ fn parse_chart_data_line(line: &str) -> Option<SusLine> {
                     if let (Some(lane), Some(channel)) =
                         (parse_lane(chars[1]), parse_lane(chars[2]))
                     {
+                        // Always use ChuniNoteType::Slide for slide lines
+                        if data.len() >= 2 {
+                            let width_digit = data.chars().nth(1).unwrap();
+                            let width = width_digit.to_digit(36).unwrap_or(1) as u8;
+                            let note = Note {
+                                lane,
+                                tick: 0,
+                                note_type: ChuniNoteType::Slide,
+                                width,
+                            };
+                            return Some(SusLine::Note(note));
+                        }
                         return Some(SusLine::SlideNotes {
                             measure,
                             slide_type,
@@ -421,6 +476,20 @@ fn parse_chart_data_line(line: &str) -> Option<SusLine> {
                 Some('5') if type_and_lane.len() >= 2 => {
                     // Directional notes (5x)
                     if let Some(lane) = parse_lane(type_and_lane.chars().nth(1).unwrap_or('0')) {
+                        if data.len() >= 2 {
+                            let type_digit = data.chars().nth(0).unwrap();
+                            let width_digit = data.chars().nth(1).unwrap();
+                            let type_digit = type_digit.to_digit(36).unwrap_or(5) as u8;
+                            let width = width_digit.to_digit(36).unwrap_or(1) as u8;
+                            let note_type = sus_type_to_chuni_note_type(type_digit, None);
+                            let note = Note {
+                                lane,
+                                tick: 0,
+                                note_type,
+                                width,
+                            };
+                            return Some(SusLine::Note(note));
+                        }
                         return Some(SusLine::DirectionalNotes {
                             measure,
                             lane,
@@ -556,16 +625,12 @@ mod tests {
         let line = "#00010: 14141414";
         let result = parse_line(line);
         match result {
-            SusLine::TapNotes {
-                measure,
-                lane,
-                data,
-            } => {
-                assert_eq!(measure, 0);
-                assert_eq!(lane, 0);
-                assert_eq!(data, "14141414");
+            SusLine::Note(note) => {
+                assert_eq!(note.lane, 0);
+                assert_eq!(note.note_type, super::super::ChuniNoteType::Tap);
+                assert_eq!(note.width, 4);
             }
-            _ => panic!("Expected tap notes, got {:?}", result),
+            _ => panic!("Expected tap note, got {:?}", result),
         }
     }
 
@@ -574,18 +639,12 @@ mod tests {
         let line = "#00020a: 14002400";
         let result = parse_line(line);
         match result {
-            SusLine::HoldNotes {
-                measure,
-                lane,
-                channel,
-                data,
-            } => {
-                assert_eq!(measure, 0);
-                assert_eq!(lane, 0);
-                assert_eq!(channel, 10); // 'a' = 10
-                assert_eq!(data, "14002400");
+            SusLine::Note(note) => {
+                assert_eq!(note.lane, 0);
+                assert_eq!(note.note_type, super::super::ChuniNoteType::Hold);
+                assert_eq!(note.width, 4);
             }
-            _ => panic!("Expected hold notes, got {:?}", result),
+            _ => panic!("Expected hold note, got {:?}", result),
         }
     }
 
@@ -594,20 +653,12 @@ mod tests {
         let line = "#00030a: 14340024";
         let result = parse_line(line);
         match result {
-            SusLine::SlideNotes {
-                measure,
-                slide_type,
-                lane,
-                channel,
-                data,
-            } => {
-                assert_eq!(measure, 0);
-                assert_eq!(slide_type, 3);
-                assert_eq!(lane, 0);
-                assert_eq!(channel, 10); // 'a' = 10
-                assert_eq!(data, "14340024");
+            SusLine::Note(note) => {
+                assert_eq!(note.lane, 0);
+                assert_eq!(note.note_type, super::super::ChuniNoteType::Slide);
+                assert_eq!(note.width, 4);
             }
-            _ => panic!("Expected slide notes, got {:?}", result),
+            _ => panic!("Expected slide note, got {:?}", result),
         }
     }
 
