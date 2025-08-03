@@ -1,197 +1,350 @@
 # Umiguri Chart v8 Specification
 
-- Basics
-  - File extension is `.ugc`.
-  - Character encoding is UTF-8; line endings can be LF or CRLF.
-  - One command/note per line.
+- Basic Information
+
+  - The file extension is `.ugc`.
+  - Character encoding is UTF-8; line endings may be LF or CRLF.
+  - One command or note per line.
   - Lines not starting with `@` or `#` are ignored.
-  - Lines missing parameters are ignored.
-  - Comment lines begin with `'`.
-  - Time is specified in `Bar'Tick` format, referred to as BarTick format.
+  - Lines with missing parameters are ignored.
+  - Comment lines start with `'`.
+  - Time specification uses the `Bar'Tick` format, hereafter referred to as BarTick format.
     Example: Bar 0, Tick 240 → `0'240`
 
 - Header Lines
-  - Parameters are separated by horizontal tabs.
-  - Command list and arguments:
 
-  - `VER` Version
+  - Parameters are separated by horizontal tabs.
+  - Commands and their arguments are as follows:
+
+  - VER Version Specification
+
     - Version (always 8)
 
-  - `EXVER` Extended version
+  - EXVER Extended Version Specification
+
     - ExVersion 0 or 1
-      - `1` forces `FLAG:EXLONG` to `TRUE`
-      - Always `1` in UMIGURI NEXT
+      - When set to `1`, behaves as if `FLAG:EXLONG` is forcibly `TRUE`.
+      - In UMIGURI NEXT, this is always `1`.
 
-  - `TITLE` Song title
-    - Title SongTitle
+  - TITLE Song Title Specification
 
-  - `SORT` Sort key
-    - Key SortKey
-      - Used for ordering when sorting by title:
-        1. Convert letters to uppercase: `magnet` → `MAGNET`
-        2. Remove symbols/spaces: `Miracle∞Hinacle` → `MIRACLEHINACLE`
-        3. Convert hiragana to katakana, remove diacritics, small chars → large, long vowel → `ウ`: `かーてんこーる!!!!!` → `カウテンコウル`
-        4. Convert kanji to readings and apply above rules: `幻想症候群` → `ケンソウシントロウム`
-        5. Convert leet to correct form and apply above: `^/7(L?[_(L#<>+&l^(o)` → `NYARLATHOTEP`
-        6. For non-Japanese/English: transliterate to Japanese then apply above: `슈퍼히어로` → `シユホヒオロ`
+    - Title of the song
 
-  - `ARTIST` Artist name
-    - Artist ArtistName
+  - SORT Sort Key Specification
 
-  - `GENRE` Genre name
-    - Genre GenreName
-    - Note: If unspecified, parent folder name is used.
+    - Key for sorting order
+      - Used when sorting by song title; specify a key converted using these rules:
+        1. Convert Latin letters to uppercase.  
+           `magnet` → `MAGNET`
+        2. Remove symbols and whitespace.  
+           `Miracle∞Hinacle` → `MIRACLEHINACLE`
+        3. Convert hiragana to katakana, remove dakuten/handakuten, uppercase any small kana, and replace long vowel marks with `ウ`.  
+           `かーてんこーる!!!!!` → `カウテンコウル`
+        4. Convert kanji to their readings, then apply the above rules.  
+           `幻想症候群` → `ケンソウシントロウム`
+        5. Convert leet speak (including symbols) to its original representation, then apply the above rules.  
+           `^/7(L?[_(L#<>+&l^(o)` → `NYARLATHOTEP`
+        6. For non-Japanese/English languages, transliterate to Japanese, then apply the above rules.  
+           `슈퍼히어로` → `シュポヒオロ` → `シユホヒオロ`
 
-  - `DESIGN` Chart designer
-    - Designer DesignerName
+  - ARTIST Artist Name Specification
 
-  - `DIFF` Difficulty
-    - Difficulty BASIC: 0, ADVANCED: 1, EXPERT: 2, MASTER: 3, WORLD'S END: 4, ULTIMA: 5
+    - Name of the artist
 
-  - `LEVEL` Play level
-    - Level LevelValue
-    - For WORLD'S END, this is the star count.
+  - GENRE Genre Name Specification
 
-  - `WEATTR` WORLD'S END attribute
-    - Attribute (kanji or one full-width symbol)
+    - Genre of the song
+    - Note: If unspecified, the parent folder name of the song folder is used.
 
-  - `CONST` Chart constant
-    - Constant Value
+  - DESIGN Chart Designer Specification
 
-  - `SONGID` Song ID
-    - SongId IDValue
-    - Use the same ID for all difficulties of the same song. WORLD'S END requires a different ID.
+    - Name of the chart designer
 
-  - `RLDATE` Release date
-    - Date in `YYYYMMDD` format
+  - DIFF Difficulty
 
-  - `BGM` Audio file
+    - Difficulty: BASIC: 0, ADVANCED: 1, EXPERT: 2, MASTER: 3, WORLD'S END: 4, ULTIMA: 5
+
+  - LEVEL Play Level Specification
+
+    - Level value
+      - For WORLD'S END difficulty, specify the number of stars.
+
+  - WEATTR WORLD'S END Attribute Specification
+
+    - Attribute (single kanji or full-width symbol)
+
+  - CONST Chart Constant Specification
+
+    - Constant value for the chart
+
+  - SONGID Song ID Specification
+
+    - SongId
+      - Use the same ID for different difficulties of the same song, except WORLD'S END charts must have unique IDs.
+
+  - RLDATE Song Release Date
+
+    - Date added, in YYYYMMDD format
+
+  - BGM Audio File Specification
+
     - FileName
-      - Supported: WAV, MP3, OGG, M4A (recommended, ~3MB for fast loading)
+      - Supported formats: WAV, MP3, OGG, M4A
+      - M4A is highly recommended; keeping around 3 MB improves load speed.
 
-  - `BGMOFS` Audio offset
+  - BGMOFS Audio Offset Specification
+
     - OffsetTime in seconds
-      - Positive: delay playback, Negative: start early
-      - Recommended to set offset to 0 and adjust waveform externally
+      - Positive: delay playback; Negative: advance playback
+      - It’s recommended to set this to 0 in the chart and adjust offset at the audio level.
 
-  - `BGMPRV` Audio preview range
+  - BGMPRV Audio Preview Range Specification
+
     - StartTime (seconds)
     - EndTime (seconds)
 
-  - `JACKET` Jacket image
-    - FileName
-      - Supported: PNG, BMP, JPEG, GIF
-      - Also GPU formats: DDS (BC1, no mipmaps recommended)
-      - Recommended resolution: 400x400
+  - JACKET Jacket Image Specification
 
-  - `BGIMG` Background image
     - FileName
-      - Supported: PNG, BMP, JPEG, GIF
-      - Also supports video: MP4, AVI
+      - Supported formats: PNG, BMP, JPEG, GIF
+      - GPU-compressed formats supported: DDS (BC1; no mipmaps recommended)
+      - 400×400 resolution is highly recommended.
 
-  - `BGSCENE` Background 3D scene
+  - BGIMG Background Image Specification
+
+    - FileName
+      - Supported formats: PNG, BMP, JPEG, GIF
+      - Video formats supported: MP4, AVI
+
+  - BGSCENE Background 3D Scene Specification
+
     - SceneId
 
-  - `BGMODE` Background mode
-    - AttrName
-      - `PASSIVE` - ignores audio playback position, loops if short
+  - BGMODE Background Mode Settings
+
+    - AttrName (setting name)
+      - PASSIVE: ignore audio playback position and loop if shorter than chart length.
     - Value: TRUE / FALSE
 
-  - `FLDCOL` Field divider color
-    - ColorIndex:
-      - -1 Auto, 0 White, 1 Red, 2 Orange, 3 Yellow, 4 Lime, 5 Green,
-        6 Teal, 7 Blue, 8 Purple
+  - FLDCOL Field Divider Line Color Specification
 
-  - `FLDSCENE` Field background 3D scene
+    - ColorIndex
+      - -1 Auto
+      - 0 White
+      - 1 Red
+      - 2 Orange
+      - 3 Yellow
+      - 4 Lime
+      - 5 Green
+      - 6 Teal
+      - 7 Blue
+      - 8 Purple
+
+  - FLDSCENE Field Background 3D Scene Specification
+
     - SceneId
 
-  - `TICKS` Time resolution
+  - TICKS Time Resolution
+
     - Resolution (always 480)
 
-  - `MAINBPM` Main BPM
-    - Bpm Value
+  - MAINBPM Main BPM Specification
 
-  - `MAINTIL` Main timeline
+    - Bpm
+
+  - MAINTIL Main Timeline Specification
+
     - TimelineId (0 recommended)
 
-  - `CLKCNT` Click sound count
-    - Count
-    - Note: Defaults to numerator of first time signature
+  - CLKCNT Click Sound Count
 
-  - `FLAG` Flag settings
-    - AttrName:
-      - `DIFFTTL`: Tutorial chart (always FALSE)
-      - `SOFFSET`: Insert 1-bar blank at start
-      - `CLICK`: Play click sound
-      - `EXLONG`: Enable ExLong
-      - `BGMWCMP`: Wait for audio to finish
-      - `HIPRECISION`: High precision AIR note values
+    - Count
+    - Note: If omitted, plays the number of click sounds equal to the numerator of the first measure’s time signature.
+
+  - FLAG Flag Settings
+
+    - AttrName (flag name)
+      - `DIFFTTL`: tutorial chart (always specify FALSE)
+      - `SOFFSET`: insert one measure of blank space at the start
+      - `CLICK`: enable click sounds
+      - `EXLONG`: use ExLong
+      - `BGMWCMP`: wait until audio playback finishes
+      - `HIPRECISION`: use high-resolution values for AIR notes
     - Value: TRUE / FALSE
 
-  - `BPM` BPM definition
+  - BPM BPM Definition
+
     - BarTick
     - Bpm
 
-  - `BEAT` Time signature definition
-    - Bar
-    - Numerator
-    - Denominator
+  - BEAT Time Signature Definition
 
-  - `TIL` Timeline definition
+    - Bar (measure index)
+    - Numer (numerator)
+    - Denom (denominator)
+
+  - TIL Timeline Definition
+
     - TimelineId
     - BarTick
     - Speed
 
-  - `SPDMOD` Note speed definition
+  - SPDMOD Note Speed Definition
+
     - BarTick
     - Speed
 
-  - `USETIL` Timeline ID assignment
+  - USETIL Timeline ID Selector
     - TimelineId
-    - Notes following this line use the given timeline ID
+    - Note: Special command to assign a timeline ID for subsequent note lines.
 
 - Note Lines
-  - Basics
-    - Parent notes:
-      - `#BarTick:txw`
-        - t: note type
-        - x: horizontal position (base36)
-        - w: width (base36)
-    - Child notes:
-      - `#OffsetTick:txw`
-        - Offset from parent note
-        - Same format as above
 
-  - CLICK: `#BarTick:c`
-  - TAP: `#BarTick:txw` (t = `t`)
-  - EXTAP: `#BarTick:txwd` (t = `x`, d = U/D/C/A/W/L/R/I)
-  - FLICK: `#BarTick:txwd` (t = `f`, d = A/L/R)
-  - DAMAGE: `#BarTick:txw` (t = `d`)
-  - HOLD:
-    - Parent: `#BarTick:txw` (t = `h`)
-    - End: `#OffsetTick:s`
-  - SLIDE:
-    - Parent: `#BarTick:txw` (t = `s`)
-    - Intermediate/End: `#OffsetTick:sxw`
-    - Control point: `#OffsetTick:cxw`
-  - AIR:
+  - Overview
+
+    - Parent Note
+      - `#BarTick:txw` format
+        - t: note type
+        - x: horizontal position (base-36)
+        - w: width (base-36)
+    - Child Note
+      - `#OffsetTick>txw` format
+        - t: note type
+        - x: horizontal position (base-36)
+        - w: width (base-36)
+
+  - CLICK
+
+    - `#BarTick:t`
+      - t = `c`
+
+  - TAP
+
+    - `#BarTick:txw`
+      - t = `t`
+
+  - EXTAP
+
+    - `#BarTick:txwd`
+      - t = `x`
+      - d: effect
+        - `U` Up
+        - `D` Down
+        - `C` Center
+        - `A` Clockwise
+        - `W` Counterclockwise
+        - `L` Right
+        - `R` Left
+        - `I` In/Out
+
+  - FLICK
+
+    - `#BarTick:txwd`
+      - t = `f`
+      - d: auto‑play effect direction
+        - `A` Auto
+        - `L` Right
+        - `R` Left
+
+  - DAMAGE
+
+    - `#BarTick:txw`
+      - t = `d`
+
+  - HOLD
+
+    - `#BarTick:txw`
+      - t = `h`
+    - Child Note
+      - End point
+        - `#OffsetTick:t`
+        - t = `s`
+
+  - SLIDE
+
+    - `#BarTick:txw`
+      - t = `s`
+    - Child Notes
+      - Intermediate / End point
+        - `#OffsetTick:txw`
+        - t = `s`
+      - Control point
+        - `#OffsetTick:txw`
+        - t = `c`
+
+  - AIR
+
     - `#BarTick:txwddc`
-      - dd = direction (UC/UL/UR/DC/DL/DR)
-      - c = color (N/I)
-  - AIR-HOLD:
-    - Parent: `#BarTick:txwc` (t = `H`)
-      - c = color (N/I)
-    - Intermediate/End: `#OffsetTick:s`
-    - AIR-ACTION free end: `#OffsetTick:c`
-  - AIR-SLIDE:
-    - Parent: `#BarTick:txwhhc`
-      - hh = height ×10 in base36
-      - c = color (N/I)
-    - Intermediate/End: `#OffsetTick:sxwhh`
-    - Control/Free end: `#OffsetTick:cxwhh`
-  - AIR-CRUSH:
-    - Parent: `#BarTick:txwhhc,{interval}`
-      - hh = height ×10 in base36
-      - c = color: `0`-`9`, `A`, `Y`, `B`, `C`, `D`, `Z`
-      - interval: decimal value, `0` for AIR-TRACE, `$` for combo-on-start only
-    - End: `#OffsetTick:cxwhh`
+      - t = `a`
+      - dd: direction
+        - `UC` Up
+        - `UL` Up‑Right
+        - `UR` Up‑Left
+        - `DC` Down
+        - `DL` Down‑Right
+        - `DR` Down‑Left
+      - c: color
+        - `N` Normal
+        - `I` Inverted
+
+  - AIR‑HOLD
+
+    - `#BarTick:txwc`
+      - t = `H`
+      - c: color
+        - `N` Normal
+        - `I` Inverted
+    - Child Notes
+      - Intermediate / End point
+        - `#OffsetTick:t`
+        - t = `s`
+      - AIR‑ACTION no‑action end point
+        - `#OffsetTick:t`
+        - t = `c`
+
+  - AIR‑SLIDE
+
+    - `#BarTick:txwhhc`
+      - t = `S`
+      - hh: height (two‑digit base‑36 of height×10)
+      - c: color
+        - `N` Normal
+        - `I` Inverted
+    - Child Notes
+      - Intermediate / End point
+        - `#OffsetTick:txwhh`
+        - t = `s`
+        - hh: height (two‑digit base‑36 of height×10)
+      - Control point / AIR‑ACTION no‑action end point
+        - `#OffsetTick:txwhh`
+        - t = `c`
+        - hh: height (two‑digit base‑36 of height×10)
+
+  - AIR‑CRUSH
+    - `#BarTick:txwhhc,{interval}`
+      - t = `C`
+      - hh: height (two‑digit base‑36 of height×10)
+      - c: color
+        - `0` Normal
+        - `1` Red
+        - `2` Orange
+        - `3` Yellow
+        - `4` Yellow‑Green
+        - `5` Green
+        - `6` Cyan
+        - `7` Sky
+        - `8` Light
+        - `9` Blue
+        - `A` Blue‑Purple
+        - `Y` Magenta
+        - `B` Pink
+        - `C` White
+        - `D` Black
+        - `Z` Transparent
+      - {interval}: placement interval in decimal
+        - `0` for AIR‑TRACE; `$` for only the start note generating combo.
+    - Child Note
+      - End point
+        - `#OffsetTick:txwhh`
+        - t = `c`
+        - hh: height (two‑digit base‑36 of height×10)
