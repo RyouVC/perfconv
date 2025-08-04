@@ -2,14 +2,15 @@
 
 use std::collections::HashMap;
 
-use chumsky::extra::Err;
 use eyre::OptionExt;
 
+#[derive(Debug)]
 pub struct UGCChart {
     pub metadata: HashMap<String, String>,
     pub timelines: HashMap<u32, Vec<ParentNote>>,
 }
 
+#[derive(Debug)]
 pub enum ChildNoteType {
     HoldEndPoint,
     SlideRelayPoint {
@@ -42,11 +43,13 @@ pub enum ChildNoteType {
     },
 }
 
+#[derive(Debug)]
 pub struct ChildNote {
     pub note_type: ChildNoteType,
     pub offset_tick: u64,
 }
 
+#[derive(Debug)]
 pub enum ExTapEffectDirection {
     Up,
     Down,
@@ -58,12 +61,14 @@ pub enum ExTapEffectDirection {
     InOut,
 }
 
+#[derive(Debug)]
 pub enum FlickEffectDirection {
     Auto,
     Right,
     Left,
 }
 
+#[derive(Debug)]
 pub enum AirDirection {
     Up,
     UpRight,
@@ -73,11 +78,13 @@ pub enum AirDirection {
     DownLeft,
 }
 
+#[derive(Debug)]
 pub enum AirColor {
     Normal,
     Inverted,
 }
 
+#[derive(Debug)]
 pub enum AirCrushColor {
     Normal,
     Red,
@@ -97,6 +104,7 @@ pub enum AirCrushColor {
     Transparent,
 }
 
+#[derive(Debug)]
 pub enum ParentNoteType {
     Click,
     Tap {
@@ -131,31 +139,32 @@ pub enum ParentNoteType {
         lane: u8,
         width: u8,
         direction: AirDirection,
-        color: AirColor,
+        color: Option<AirColor>,
     },
     AirHold {
         lane: u8,
         width: u8,
-        color: AirColor,
+        color: Option<AirColor>,
         children: Vec<ChildNote>,
     },
     AirSlide {
         lane: u8,
         width: u8,
         height: u16,
-        color: AirColor,
+        color: Option<AirColor>,
         children: Vec<ChildNote>,
     },
     AirCrush {
         lane: u8,
         width: u8,
         height: u16,
-        color: AirCrushColor,
+        color: Option<AirCrushColor>,
         interval: Option<f32>,
         children: Vec<ChildNote>,
     },
 }
 
+#[derive(Debug)]
 pub struct ParentNote {
     pub note_type: ParentNoteType,
     pub bar: u64,
@@ -237,25 +246,28 @@ fn parse_parent_note(line: &str) -> eyre::Result<ParentNote> {
                     &data[3..5]
                 )))?,
             },
-            color: match &data[5..6] {
-                "N" => AirColor::Normal,
-                "I" => AirColor::Inverted,
-                _ => Err(eyre::Report::msg(format!(
-                    "unknown air color {}",
-                    &data[5..6]
-                )))?,
+            color: match data.get(5..6) {
+                Some(slice) => Some(match slice {
+                    "N" => AirColor::Normal,
+                    "I" => AirColor::Inverted,
+                    _ => Err(eyre::Report::msg(format!("unknown air color {}", slice)))?,
+                }),
+                None => None,
             },
         }),
         "H" => Some(ParentNoteType::AirHold {
             lane: u8::from_str_radix(&data[1..2], 36)?,
             width: u8::from_str_radix(&data[2..3], 36)?,
-            color: match &data[3..4] {
-                "N" => AirColor::Normal,
-                "I" => AirColor::Inverted,
-                _ => Err(eyre::Report::msg(format!(
-                    "unknown air hold color {}",
-                    &data[3..4]
-                )))?,
+            color: match data.get(3..4) {
+                Some(slice) => Some(match slice {
+                    "N" => AirColor::Normal,
+                    "I" => AirColor::Inverted,
+                    _ => Err(eyre::Report::msg(format!(
+                        "unknown air hold color {}",
+                        slice
+                    )))?,
+                }),
+                None => None,
             },
             children: vec![],
         }),
@@ -263,13 +275,16 @@ fn parse_parent_note(line: &str) -> eyre::Result<ParentNote> {
             lane: u8::from_str_radix(&data[1..2], 36)?,
             width: u8::from_str_radix(&data[2..3], 36)?,
             height: u16::from_str_radix(&data[3..5], 36)?,
-            color: match &data[5..6] {
-                "N" => AirColor::Normal,
-                "I" => AirColor::Inverted,
-                _ => Err(eyre::Report::msg(format!(
-                    "unknown air slide color {}",
-                    &data[5..6]
-                )))?,
+            color: match data.get(5..6) {
+                Some(slice) => Some(match slice {
+                    "N" => AirColor::Normal,
+                    "I" => AirColor::Inverted,
+                    _ => Err(eyre::Report::msg(format!(
+                        "unknown air slide color {}",
+                        slice
+                    )))?,
+                }),
+                None => None,
             },
             children: vec![],
         }),
@@ -277,27 +292,30 @@ fn parse_parent_note(line: &str) -> eyre::Result<ParentNote> {
             lane: u8::from_str_radix(&data[1..2], 36)?,
             width: u8::from_str_radix(&data[2..3], 36)?,
             height: u16::from_str_radix(&data[3..5], 36)?,
-            color: match &data[5..6] {
-                "0" => AirCrushColor::Normal,
-                "1" => AirCrushColor::Red,
-                "2" => AirCrushColor::Orange,
-                "3" => AirCrushColor::Yellow,
-                "4" => AirCrushColor::YellowGreen,
-                "5" => AirCrushColor::Green,
-                "6" => AirCrushColor::Cyan,
-                "7" => AirCrushColor::Sky,
-                "8" => AirCrushColor::Light,
-                "9" => AirCrushColor::Blue,
-                "A" => AirCrushColor::BluePurple,
-                "Y" => AirCrushColor::Magenta,
-                "B" => AirCrushColor::Pink,
-                "C" => AirCrushColor::White,
-                "D" => AirCrushColor::Black,
-                "Z" => AirCrushColor::Transparent,
-                _ => Err(eyre::Report::msg(format!(
-                    "unknown air crush color {}",
-                    &data[5..6]
-                )))?,
+            color: match data.get(5..6) {
+                Some(slice) => Some(match slice {
+                    "0" => AirCrushColor::Normal,
+                    "1" => AirCrushColor::Red,
+                    "2" => AirCrushColor::Orange,
+                    "3" => AirCrushColor::Yellow,
+                    "4" => AirCrushColor::YellowGreen,
+                    "5" => AirCrushColor::Green,
+                    "6" => AirCrushColor::Cyan,
+                    "7" => AirCrushColor::Sky,
+                    "8" => AirCrushColor::Light,
+                    "9" => AirCrushColor::Blue,
+                    "A" => AirCrushColor::BluePurple,
+                    "Y" => AirCrushColor::Magenta,
+                    "B" => AirCrushColor::Pink,
+                    "C" => AirCrushColor::White,
+                    "D" => AirCrushColor::Black,
+                    "Z" => AirCrushColor::Transparent,
+                    _ => Err(eyre::Report::msg(format!(
+                        "unknown air crush color {}",
+                        &data[5..6]
+                    )))?,
+                }),
+                None => None,
             },
             interval: if let Some((_, interval)) = data.split_once(',') {
                 Some(interval.parse::<f32>()?)
@@ -354,6 +372,14 @@ impl<T: AsRef<str>> From<T> for UGCChart {
                 }
             } else if line.starts_with('#') {
                 let parent_note = parse_parent_note(&line[1..]);
+
+                match parent_note {
+                    Ok(parent_note) => timelines
+                        .entry(current_timeline)
+                        .or_insert_with(|| vec![])
+                        .push(parent_note),
+                    Err(_) => {}
+                }
             } else {
                 unreachable!()
             }
